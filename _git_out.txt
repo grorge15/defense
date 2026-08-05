@@ -1,0 +1,7 @@
+﻿git : fatal: your current branch 'master' does not have any commits yet
+所在位置 C:\Users\Admin\AppData\Local\Temp\ps-script-d2f3a249-3496-45c5-b33b-1b7caa3448d0.ps1:7 字符: 1
++ git -C "C:/Users/Admin/Defense2" log --oneline -20 -- assets/scripts/ ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (fatal: your cur...any commits yet:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
