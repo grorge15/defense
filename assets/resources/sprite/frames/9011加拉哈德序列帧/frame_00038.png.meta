@@ -31,10 +31,102 @@
         ".json"
       ],
       "subMetas": {}
+    },
+    "f9941": {
+      "importer": "sprite-frame",
+      "uuid": "be3fab1d-485d-4974-b961-1b74674a1bf6@f9941",
+      "displayName": "frame_00038",
+      "id": "f9941",
+      "name": "spriteFrame",
+      "userData": {
+        "trimThreshold": 1,
+        "rotated": false,
+        "offsetX": 9,
+        "offsetY": -7.5,
+        "trimX": 25,
+        "trimY": 34,
+        "width": 96,
+        "height": 75,
+        "rawWidth": 128,
+        "rawHeight": 128,
+        "borderTop": 0,
+        "borderBottom": 0,
+        "borderLeft": 0,
+        "borderRight": 0,
+        "packable": true,
+        "pixelsToUnit": 100,
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "meshType": 0,
+        "vertices": {
+          "rawPosition": [
+            -48,
+            -37.5,
+            0,
+            48,
+            -37.5,
+            0,
+            -48,
+            37.5,
+            0,
+            48,
+            37.5,
+            0
+          ],
+          "indexes": [
+            0,
+            1,
+            2,
+            2,
+            1,
+            3
+          ],
+          "uv": [
+            25,
+            94,
+            121,
+            94,
+            25,
+            19,
+            121,
+            19
+          ],
+          "nuv": [
+            0.1953125,
+            0.1484375,
+            0.9453125,
+            0.1484375,
+            0.1953125,
+            0.734375,
+            0.9453125,
+            0.734375
+          ],
+          "minPos": [
+            -48,
+            -37.5,
+            0
+          ],
+          "maxPos": [
+            48,
+            37.5,
+            0
+          ]
+        },
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "be3fab1d-485d-4974-b961-1b74674a1bf6@6c48a",
+        "atlasUuid": "",
+        "trimType": "auto"
+      },
+      "ver": "1.0.12",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
     }
   },
   "userData": {
-    "type": "texture",
+    "type": "sprite-frame",
     "fixAlphaTransparencyArtifacts": false,
     "hasAlpha": true,
     "redirect": "be3fab1d-485d-4974-b961-1b74674a1bf6@6c48a"
