@@ -75,6 +75,12 @@ export class GameConstants {
     public static readonly TREE_HIT_COUNT = 5;
     public static readonly TREE_TOTAL_COUNT = 6;
     public static readonly TREE_REGROW_PAIR = 2;
+    /** 地面木头无人拾取后自动飞入 Deposit_wood 的等待秒数 */
+    public static readonly WOOD_GROUND_AUTO_DEPOSIT_SEC = 2;
+    public static readonly TREE_FALL_DURATION_SEC = 0.4;
+    public static readonly TREE_REGROW_DURATION_SEC = 0.45;
+    /** 地面木头未被拾取时，自动飞入 Deposit_wood 的等待秒数 */
+    public static readonly WOOD_AUTO_DEPOSIT_SEC = 2;
 
     // —— 烤肉转化 ——
     public static readonly COOK_DURATION_SEC = 2.0;

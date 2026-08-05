@@ -200,9 +200,64 @@ export class ResourceEconomySystem extends Component {
             if (ent && ent.isValid) {
                 ent.flying = false;
                 node.setWorldPosition(land.x, land.y, 0);
+                if (type === ResourceType.Wood) {
+                    this._scheduleWoodAutoDeposit(ent);
+                }
             }
         });
         return ent;
+    }
+
+    /** 地面木头 2s 内未被玩家拾取 → 飞入最近 Deposit_wood，供帮手搬运 */
+    private _scheduleWoodAutoDeposit(ent: ResourceEntity): void {
+        const wait = GameConstants.WOOD_GROUND_AUTO_DEPOSIT_SEC;
+        this.scheduleOnce(() => this._tryAutoDepositWood(ent), wait);
+    }
+
+    private _tryAutoDepositWood(ent: ResourceEntity): void {
+        if (!ent?.isValid || ent.flying) {
+            return;
+        }
+        if (this._groundResources.indexOf(ent) < 0) {
+            return;
+        }
+        const dep = this._resolveWoodDeposit(ent.node.worldPosition);
+        if (!dep) {
+            return;
+        }
+        ent.flying = true;
+        const from = ent.node.worldPosition.clone();
+        const dest = dep.node.worldPosition.clone();
+        flyResourceTo(ent.node, dest, undefined, undefined, () => {
+            const idx = this._groundResources.indexOf(ent);
+            if (idx >= 0) {
+                this._groundResources.splice(idx, 1);
+            }
+            if (ent.node.isValid) {
+                ent.node.destroy();
+            }
+            dep.addStock(1, from);
+        });
+    }
+
+    private _resolveWoodDeposit(near: Vec3): DepositPoint | null {
+        let best: DepositPoint | null = null;
+        let bestD = Number.POSITIVE_INFINITY;
+        for (const dep of this.deposits) {
+            if (dep.resourceType !== ResourceType.Wood) {
+                continue;
+            }
+            if (!dep.node.activeInHierarchy || dep.stock >= dep.capacity) {
+                continue;
+            }
+            const dp = dep.node.worldPosition;
+            const d = (dp.x - near.x) ** 2 + (dp.y - near.y) ** 2;
+            if (d < bestD) {
+                bestD = d;
+                best = dep;
+            }
+        }
+        return best;
     }
 
     private _spawnGroundResource(type: ResourceType, worldPos: Vec3): ResourceEntity | null {

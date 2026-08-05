@@ -14368,8 +14368,8 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 23.509,
-      "y": 73.862,
+      "x": 33.535,
+      "y": 96.521,
       "z": 0
     },
     "_lrot": {
@@ -14515,8 +14515,8 @@
     },
     "_enabled": true,
     "__prefab": null,
-    "depositId": "deposit_coin",
-    "depositType": 2,
+    "depositId": "deposit_wood",
+    "depositType": 1,
     "slots": [
       {
         "__id__": 446
@@ -14532,7 +14532,7 @@
       }
     ],
     "resourcePrefab": {
-      "__uuid__": "c0a1b2d3-e4f5-6789-abcd-001122334455",
+      "__uuid__": "adc9a96b-0b4b-4fb6-a1d1-265e3319eadd",
       "__expectedType__": "cc.Prefab"
     },
     "stackGap": 8,
@@ -17554,6 +17554,8 @@
     "dropMin": 2,
     "dropMax": 3,
     "hitFlashSec": 0.2,
+    "fallDuration": 0.45,
+    "regrowDuration": 0.5,
     "sprite": null,
     "_id": "Comp.1036"
   },
@@ -17747,6 +17749,8 @@
     "dropMin": 2,
     "dropMax": 3,
     "hitFlashSec": 0.2,
+    "fallDuration": 0.45,
+    "regrowDuration": 0.5,
     "sprite": null,
     "_id": "Comp.1033"
   },
@@ -17940,6 +17944,8 @@
     "dropMin": 2,
     "dropMax": 3,
     "hitFlashSec": 0.2,
+    "fallDuration": 0.45,
+    "regrowDuration": 0.5,
     "sprite": null,
     "_id": "Comp.1030"
   },
@@ -22014,6 +22020,8 @@
     "dropMin": 2,
     "dropMax": 3,
     "hitFlashSec": 0.2,
+    "fallDuration": 0.45,
+    "regrowDuration": 0.5,
     "sprite": null,
     "_id": "Comp.1021"
   },
@@ -22094,6 +22102,8 @@
     "dropMin": 2,
     "dropMax": 3,
     "hitFlashSec": 0.2,
+    "fallDuration": 0.45,
+    "regrowDuration": 0.5,
     "sprite": null,
     "_id": "Comp.1024"
   },
@@ -22174,6 +22184,8 @@
     "dropMin": 2,
     "dropMax": 3,
     "hitFlashSec": 0.2,
+    "fallDuration": 0.45,
+    "regrowDuration": 0.5,
     "sprite": null,
     "_id": "Comp.1027"
   },

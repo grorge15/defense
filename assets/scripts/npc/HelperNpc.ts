@@ -106,16 +106,45 @@ export class HelperNpc extends Component {
             this._goIdleAtStall();
             return;
         }
-        // PlaceRoot 耗尽：去有货储肉地取肉
-        const meatDep = this._resolveMeatDeposit();
-        if (meatDep && meatDep.stock > 0) {
+        // PlaceRoot 耗尽：去有货放置点取货（生肉 / 木头）
+        const pickupDep = this._resolvePickupDeposit();
+        if (pickupDep && pickupDep.stock > 0) {
             this._task = HelperTask.PickupDeposit;
             this._state = NpcWorkState.Working;
-            this._targetPos = meatDep.node.worldPosition.clone();
-            this._activeDeposit = meatDep;
+            this._targetPos = pickupDep.node.worldPosition.clone();
+            this._activeDeposit = pickupDep;
             return;
         }
         this._goIdleAtStall();
+    }
+
+    private _resolvePickupDeposit(): DepositPoint | null {
+        if (this.stall?.stallType === StallType.Wood) {
+            return this._resolveWoodDeposit();
+        }
+        return this._resolveMeatDeposit();
+    }
+
+    private _resolveWoodDeposit(): DepositPoint | null {
+        if (this.deposit?.resourceType === ResourceType.Wood && this.deposit.stock > 0) {
+            return this.deposit;
+        }
+        if (
+            this.stall?.boundDeposit?.resourceType === ResourceType.Wood &&
+            this.stall.boundDeposit.stock > 0
+        ) {
+            return this.stall.boundDeposit;
+        }
+        const stallId = this.stall?.stallId ?? '';
+        const deps = this.node.scene?.getComponentsInChildren(DepositPoint, true) ?? [];
+        return (
+            deps.find(
+                (d) =>
+                    d.resourceType === ResourceType.Wood &&
+                    d.stock > 0 &&
+                    (d.boundStallId === stallId || d === this.deposit),
+            ) ?? null
+        );
     }
 
     private _resolveMeatDeposit(): DepositPoint | null {

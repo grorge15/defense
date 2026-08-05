@@ -1,11 +1,11 @@
-import { _decorator, Component, Sprite, Color, tween } from 'cc';
+import { _decorator, Component, Sprite, Color, tween, Vec3 } from 'cc';
 import { GameConstants } from '../core/GameConstants';
 import { EventBus, GameEvent, TreeChoppedPayload } from '../core/GameEvent';
 
 const { ccclass, property } = _decorator;
 
 /**
- * 树木：砍 maxHits 次消失；每次掉落 dropMin~dropMax 个木头；受击约 1s 可见闪白。
+ * 树木：砍 maxHits 次后缩小淡出消失；SceneTileSystem 触发 regrow 时放大淡入重生。
  * 请把 Visual 子节点上的 Sprite 拖到 sprite（或保持子节点命名含 visual）。
  */
 @ccclass('TreeEntity')
@@ -25,6 +25,12 @@ export class TreeEntity extends Component {
     @property({ tooltip: '受击闪白总时长（秒）' })
     public hitFlashSec: number = 1;
 
+    @property({ tooltip: '砍倒后缩小淡出时长（秒）' })
+    public fallDuration: number = 0.45;
+
+    @property({ tooltip: '重生放大淡入时长（秒）' })
+    public regrowDuration: number = 0.5;
+
     @property({
         type: Sprite,
         tooltip: '树的渲染 Sprite（通常在 Visual/viusal 子节点上；空则自动找子节点）',
@@ -33,15 +39,18 @@ export class TreeEntity extends Component {
 
     private _hitsLeft: number = 0;
     private _hitLocked: boolean = false;
+    private _falling: boolean = false;
     private _baseColor: Color = Color.WHITE.clone();
+    private _baseScale: Vec3 = new Vec3(1, 1, 1);
     private _warnedNoSprite: boolean = false;
 
     public get canChop(): boolean {
-        return this._hitsLeft > 0 && this.node.active && !this._hitLocked;
+        return this._hitsLeft > 0 && this.node.active && !this._hitLocked && !this._falling;
     }
 
     protected onLoad(): void {
         this._hitsLeft = this.maxHits;
+        this._baseScale = this.node.scale.clone();
         this._ensureSprite();
         if (!this.treeId || this.treeId === 'tree_0') {
             this.treeId = `tree_${this.node.name}_${this.node.uuid.slice(0, 6)}`;
@@ -63,19 +72,37 @@ export class TreeEntity extends Component {
         };
         EventBus.emit(GameEvent.TREE_CHOPPED, payload);
         if (this._hitsLeft <= 0) {
-            this.node.active = false;
+            this._fallAndHide();
         }
     }
 
-    /** 在原位置重生 */
+    /** 在原位置重生（放大淡入） */
     public regrow(): void {
         this._hitsLeft = this.maxHits;
         this._hitLocked = false;
+        this._falling = false;
+        tween(this.node).stop();
+        if (this.sprite) {
+            tween(this.sprite).stop();
+        }
         this.node.active = true;
         this._ensureSprite();
+        this.node.setScale(this._baseScale.x * 0.12, this._baseScale.y * 0.12, this._baseScale.z);
         if (this.sprite) {
-            this.sprite.color = this._baseColor.clone();
+            const hidden = this._baseColor.clone();
+            hidden.a = 0;
+            this.sprite.color = hidden;
+            tween(this.sprite)
+                .to(this.regrowDuration, { color: this._baseColor.clone() }, { easing: 'sineOut' })
+                .start();
         }
+        tween(this.node)
+            .to(
+                this.regrowDuration,
+                { scale: this._baseScale.clone() },
+                { easing: 'backOut' },
+            )
+            .start();
     }
 
     private _rollDropCount(): number {
@@ -99,7 +126,6 @@ export class TreeEntity extends Component {
             this.node.getChildByName('viusal')?.getComponent(Sprite) ??
             this.node.getChildByName('viusal-002')?.getComponent(Sprite) ??
             null;
-        // 兼容拼写 viusal-*
         if (!this.sprite) {
             for (const child of this.node.children) {
                 if (/viu?sual/i.test(child.name)) {
@@ -113,6 +139,45 @@ export class TreeEntity extends Component {
         if (this.sprite) {
             this._baseColor = this.sprite.color.clone();
         }
+    }
+
+    /** 砍倒：缩小 + 淡出，再隐藏节点 */
+    private _fallAndHide(): void {
+        this._falling = true;
+        const duration = Math.max(0.2, this.fallDuration);
+        const delay = Math.max(0, this.hitFlashSec - 0.2);
+        this.scheduleOnce(() => {
+            if (!this.node.isValid) {
+                return;
+            }
+            tween(this.node).stop();
+            if (this.sprite) {
+                tween(this.sprite).stop();
+            }
+            const targetScale = new Vec3(
+                this._baseScale.x * 0.08,
+                this._baseScale.y * 0.08,
+                this._baseScale.z,
+            );
+            const fadeColor = this._baseColor.clone();
+            fadeColor.a = 0;
+            tween(this.node)
+                .to(duration, { scale: targetScale }, { easing: 'backIn' })
+                .call(() => {
+                    this.node.active = false;
+                    this._falling = false;
+                    this.node.setScale(this._baseScale);
+                    if (this.sprite) {
+                        this.sprite.color = this._baseColor.clone();
+                    }
+                })
+                .start();
+            if (this.sprite) {
+                tween(this.sprite)
+                    .to(duration, { color: fadeColor }, { easing: 'sineIn' })
+                    .start();
+            }
+        }, delay);
     }
 
     /**
