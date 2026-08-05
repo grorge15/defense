@@ -1,0 +1,72 @@
+---
+description: 塔防试玩广告权威约束 — 对齐 assets/塔防AI工作流.md（含主玩法阶段）
+alwaysApply: true
+---
+
+# 塔防 AI 工作流（强制）
+
+**权威文档**：[`assets/塔防AI工作流.md`](../../assets/塔防AI工作流.md)  
+改玩法 / 系统 / 数值 / UI / 场景前先读该文件。**冲突时以 MD 全文为准**。
+
+## 硬约束（禁止再犯）
+
+1. **禁止直接改 `Main.scene`**（含 MCP `scene-open` / 场景内增删节点 / 直接改 `.scene` JSON）。场景编排由用户在编辑器完成。AI **只做 prefab + 脚本**：新建/改 `assets/resources/prefabs/**`、对应脚本与绑定；需要进场景时只说明「拖哪个 prefab、绑哪些属性」，不代改 Main。交付 prefab 时必须用白话说明每个需摆位节点是干什么的（如 CookPoint=烤炉落点）。例外：用户**明确点名**修 Main / 某次只改场景。
+2. **玩家移动必须用 RigidBody2D**（Dynamic + `linearVelocity`）。禁止 transform 当主移动。
+3. **购买 UI 禁止运行时生成**；场景预制体 + `PurchaseTrigger.uiRoot` / `priceLabel` 绑定。靠近判定用 **uiRoot 世界坐标**。
+4. **累进投币**：有多少扣多少 → 飞币 → 价格递减 → 剩余 0 再 `finalizePurchase`。
+5. **箭塔购买**：付清 → `CMD_BUILD_TOWER`(可多 id) → 已有 `ArrowTower` 显示 Visual，**不 new Tower**。
+6. **解锁顺序（勿颠倒）**：建塔 → **只解锁帮手** → 买帮手成功 → **才解锁英雄购买 UI**。
+7. 跨系统只用 EventBus；数值写死 `GameConstants`；可配点一律 `@property` 场景绑。
+
+## 技术基线
+
+- Cocos Creator **3.8.8** + TypeScript；伪 3D 钳制 **XY**
+- SortingOrder2D：`≈ -worldY`；贴身道具层级低于角色
+- 命名：类大驼峰；私有 `_`；预制体 `pref_` / 图集 `atlas_` / 音效 `snd_`
+
+## 六大系统边界
+
+| 系统 | 负责 | 禁止 |
+| --- | --- | --- |
+| 玩家控制 | 摇杆+刚体、地面/登塔、拾取请求 | 伤害、资源转移、摊位 |
+| 防守战斗 | 怪/墙/箭塔/英雄、击杀 | 掉落/金币/NPC；死后抛死亡事件 |
+| 资源经济 | 肉金木实体、飞行、摊位顾客 | NPC 寻路；只响应拾取/交付 |
+| NPC AI | 帮手/伐木工寻路 | 直接改库存；只发指令 |
+| 商店 | 扣款与前置条件 | 直接创建；成功发 CMD_* |
+| 场景地块 | 解锁、树木 | 产出资源、控 NPC |
+
+## 主玩法阶段（顺序强制）
+
+1. **开局**：城内金 30、生肉摊、金币地、箭塔建造点；摇杆引导；城外刷怪。
+2. **建箭塔(30)**：建成后解锁 **BuyHelper** + 城门可外出；**不**开英雄购买。
+3. **打怪交肉换金**：玩家拾肉 → InteractZone 放进 PlaceRoot → 顾客交易 → 金币进 Deposit_Coin。
+4. **买帮手(60)**：帮手常驻；PlaceRoot 有货则自动卖；玩家仍可放肉，不必站着卖。
+5. **第三阶段·英雄(60)×2**（帮手买完后才开放）：
+   - 两座箭塔旁 `HeroPurchase` 出现 → 二选一 `HeroSelectUI`
+   - 买完：该点 **转化为专属储肉 DepositPoint**（1 摊位 ↔ 1 专属地，多塔可多块）
+   - 英雄击杀 → 肉自动入该 deposit；帮手取肉运回摊位再卖
+6. **烤肉摊(120)**（**任意英雄**解锁后开放购买）→ **东西拓展(180)** → 伐木工(100)/拓展箭塔(200) → **任一拓展箭塔建成通关**。
+
+结算：生肉 3 / 烤肉 6 / 木头 12。
+
+## 购买点场景约定
+
+```
+Tower_*                          # towerId 如 tower_south1 / tower_south2
+├── BuildTrigger [PurchaseTrigger]  # towerId + extraTowerIds 可一次建多座
+│   └── pref_towerPurchase_ui-001 → uiRoot
+├── HeroPurchase [PurchaseTrigger]  # 帮手成功后才 active；itemType=Hero
+│   └── pref_Heropurchase_ui → uiRoot
+└── Visual / MountTrigger / ...
+City/Purchases/BuyHelper          # 建塔后才 active；itemType=MeatHelper
+City/Purchases/BuyCookedStall     # 任意英雄后才 active；itemType=CookedMeatStall；stallId=stall_cooked
+City/Stalls/Stall_CookedMeat      # 开局 inactive；买完后由 CookedStallSite 打开
+CookedStallSite.replaceWalls      # 占摊位位置的墙段，购买后隐藏
+```
+
+- `ArrowTower.heroPurchaseUI` 必须绑 **HeroPurchase 节点**（带 PurchaseTrigger），不要只绑 uiRoot。
+- `ShopCatalog`：Hero 设 `requireHelper: true`；CookedMeatStall 设 `requireAnyHero: true`。
+
+## 目录
+
+`assets/scenes/` · `assets/scripts/` · `assets/resources/prefabs/` · `assets/resources/sprite/`

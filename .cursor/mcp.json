@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "cocos-cli": {
+      "url": "http://127.0.0.1:9527/mcp"
+    }
+  }
+}

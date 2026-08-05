@@ -1,0 +1,78 @@
+{
+  "name": "quick-compress-image",
+  "package_version": 2,
+  "version": "1.0.1",
+  "description": "Compress a picture",
+  "author": "嘉年华",
+  "main": "./src/browser.js",
+  "contributions": {
+    "menu": [
+      {
+        "path": "i18n:menu.extension/i18n:quick-compress-image.menu",
+        "label": "i18n:quick-compress-image.setting",
+        "message": "setting"
+      }
+    ],
+    "messages": {
+      "setting": {
+        "methods": [
+          "setting"
+        ]
+      }
+    },
+    "assets": {
+      "menu": {
+        "methods": "./src/assets-menu.js",
+        "createMenu": "onCreateMenu",
+        "assetMenu": "onAssetMenu"
+      }
+    },
+    "profile": {
+      "editor": {
+        "zipRate": {
+          "default": 70,
+          "label": "压缩值(0-100%)"
+        },
+        "zipMode": {
+          "default": 0,
+          "label": "压缩模式"
+        }
+      }
+    },
+    "preferences": {
+      "label": "图片压缩",
+      "properties": {
+        "zipRate": {
+          "ui": "ui-num-input"
+        },
+        "zipMode": {
+          "ui": "ui-select",
+          "items": [
+            {
+              "value": 0,
+              "label": "Imagemin"
+            },
+            {
+              "value": 1,
+              "label": "Tinypng"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "panels": {
+    "default": {
+      "title": "快闪·压缩图片",
+      "type": "dockable",
+      "main": "src/setting-panel",
+      "size": {
+        "width": 280,
+        "height": 260
+      }
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "_storeId": "1874934589dd095b79b378bd4a3bd94b"
+}

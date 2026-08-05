@@ -1,0 +1,15 @@
+<div id="box">
+    <div class="layoutItem">  
+        压缩模式 :<br/>
+        <ui-tab id = 'zipModeTab' value="0">
+            <ui-button>Imagemin(离线)</ui-button>
+            <ui-button>TinyPng(在线)</ui-button>
+        </ui-tab>
+    </div>
+    <br/>
+    <div class="layoutItem">  
+        压缩值 (越小压缩率越大):
+        <ui-slider id = 'zipRateSlider' step="1" value="70" min="1" max="100"></ui-slider>
+    </div>
+    <ui-button class="layoutItem" id = 'saveBtn' class="green">保存</ui-button>
+</div>
