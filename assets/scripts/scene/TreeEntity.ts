@@ -5,31 +5,36 @@ import { EventBus, GameEvent, TreeChoppedPayload } from '../core/GameEvent';
 const { ccclass, property } = _decorator;
 
 /**
- * 树木：砍 maxHits 次消失；每次固定掉 1 个木头；受击短暂变色（默认短闪，最长 0.25s）。
- * 规格：一棵树每砍一次掉落一个木头，共 5 次消失。
+ * 树木：砍 maxHits 次消失；每次掉落 dropMin~dropMax 个木头；受击约 1s 可见闪白。
+ * 请把 Visual 子节点上的 Sprite 拖到 sprite（或保持子节点命名含 visual）。
  */
 @ccclass('TreeEntity')
 export class TreeEntity extends Component {
     @property({ tooltip: '树木唯一 ID' })
     public treeId: string = 'tree_0';
 
-    @property({ tooltip: '可砍次数（规格 5）' })
+    @property({ tooltip: '可砍次数' })
     public maxHits: number = GameConstants.TREE_HIT_COUNT;
 
+    @property({ tooltip: '单次砍伐最少掉落木头数' })
+    public dropMin: number = 2;
+
+    @property({ tooltip: '单次砍伐最多掉落木头数' })
+    public dropMax: number = 3;
+
+    @property({ tooltip: '受击闪白总时长（秒）' })
+    public hitFlashSec: number = 1;
+
     @property({
-        tooltip: '受击泛白时长（秒）。规格短闪；场景填再大也会被钳到 0.25s；填 0 关闭',
+        type: Sprite,
+        tooltip: '树的渲染 Sprite（通常在 Visual/viusal 子节点上；空则自动找子节点）',
     })
-    public hitFlashSec: number = 0.15;
-
-    @property({ tooltip: '受击后再次可砍间隔（秒）' })
-    public hitLockSec: number = 0.35;
-
-    @property({ tooltip: '渲染 Sprite（砍伐颜色动画；空则自动找子节点）' })
     public sprite: Sprite | null = null;
 
     private _hitsLeft: number = 0;
     private _hitLocked: boolean = false;
     private _baseColor: Color = Color.WHITE.clone();
+    private _warnedNoSprite: boolean = false;
 
     public get canChop(): boolean {
         return this._hitsLeft > 0 && this.node.active && !this._hitLocked;
@@ -37,12 +42,7 @@ export class TreeEntity extends Component {
 
     protected onLoad(): void {
         this._hitsLeft = this.maxHits;
-        if (!this.sprite) {
-            this.sprite = this.getComponent(Sprite) ?? this.getComponentInChildren(Sprite);
-        }
-        if (this.sprite) {
-            this._baseColor = this.sprite.color.clone();
-        }
+        this._ensureSprite();
         if (!this.treeId || this.treeId === 'tree_0') {
             this.treeId = `tree_${this.node.name}_${this.node.uuid.slice(0, 6)}`;
         }
@@ -53,43 +53,112 @@ export class TreeEntity extends Component {
             return;
         }
         this._hitsLeft--;
+        const drop = this._rollDropCount();
         this._flashHit();
         const wp = this.node.worldPosition;
-        // 规格强制：每次砍伐只掉 1 个木头（不读旧场景 dropMin/dropMax）
-        EventBus.emit(GameEvent.TREE_CHOPPED, {
+        const payload: TreeChoppedPayload = {
             treeId: this.treeId,
             worldPos: { x: wp.x, y: wp.y, z: 0 },
-            amount: 1,
-        } as TreeChoppedPayload);
+            amount: drop,
+        };
+        EventBus.emit(GameEvent.TREE_CHOPPED, payload);
         if (this._hitsLeft <= 0) {
             this.node.active = false;
         }
     }
 
+    /** 在原位置重生 */
     public regrow(): void {
         this._hitsLeft = this.maxHits;
         this._hitLocked = false;
         this.node.active = true;
+        this._ensureSprite();
         if (this.sprite) {
             this.sprite.color = this._baseColor.clone();
         }
     }
 
+    private _rollDropCount(): number {
+        const lo = Math.max(1, Math.floor(this.dropMin));
+        const hi = Math.max(lo, Math.floor(this.dropMax));
+        return lo + Math.floor(Math.random() * (hi - lo + 1));
+    }
+
+    private _ensureSprite(): void {
+        if (this.sprite?.isValid) {
+            if (this._baseColor.a <= 0) {
+                this._baseColor = this.sprite.color.clone();
+            }
+            return;
+        }
+        this.sprite =
+            this.getComponent(Sprite) ??
+            this.getComponentInChildren(Sprite) ??
+            this.node.getChildByName('Visual')?.getComponent(Sprite) ??
+            this.node.getChildByName('visual')?.getComponent(Sprite) ??
+            this.node.getChildByName('viusal')?.getComponent(Sprite) ??
+            this.node.getChildByName('viusal-002')?.getComponent(Sprite) ??
+            null;
+        // 兼容拼写 viusal-*
+        if (!this.sprite) {
+            for (const child of this.node.children) {
+                if (/viu?sual/i.test(child.name)) {
+                    this.sprite = child.getComponent(Sprite) ?? child.getComponentInChildren(Sprite);
+                    if (this.sprite) {
+                        break;
+                    }
+                }
+            }
+        }
+        if (this.sprite) {
+            this._baseColor = this.sprite.color.clone();
+        }
+    }
+
+    /**
+     * 受击闪白约 1s，期间不可再砍。
+     * 贴图本身已是白底时：先压暗再拉回纯白，否则「设成白色」完全看不见。
+     */
     private _flashHit(): void {
         this._hitLocked = true;
-        const lock = Math.max(0.05, this.hitLockSec);
-        // 防止场景里残留 hitFlashSec=1 导致「泛白 1 秒」
-        const flash = Math.min(0.25, Math.max(0, this.hitFlashSec));
-        if (flash > 0 && this.sprite) {
-            const spr = this.sprite;
-            tween(spr).stop();
-            spr.color = new Color(255, 255, 255, 255);
-            tween(spr)
-                .to(flash, { color: this._baseColor.clone() })
-                .start();
+        const duration = Math.max(0.25, this.hitFlashSec);
+        this._ensureSprite();
+        if (!this.sprite) {
+            if (!this._warnedNoSprite) {
+                this._warnedNoSprite = true;
+                console.warn(
+                    `[TreeEntity] ${this.node.name} 未找到 Sprite：请把 Visual 上的 Sprite 拖到 TreeEntity.sprite，否则无受击闪白`,
+                );
+            }
+            this.scheduleOnce(() => {
+                this._hitLocked = false;
+            }, duration);
+            return;
         }
-        this.scheduleOnce(() => {
-            this._hitLocked = false;
-        }, lock);
+
+        const spr = this.sprite;
+        const base = this._baseColor.clone();
+        tween(spr).stop();
+
+        const nearWhite = base.r >= 240 && base.g >= 240 && base.b >= 240;
+        const dim = nearWhite
+            ? new Color(110, 110, 110, base.a)
+            : new Color(
+                  Math.floor(base.r * 0.55),
+                  Math.floor(base.g * 0.55),
+                  Math.floor(base.b * 0.55),
+                  base.a,
+              );
+        const peak = new Color(255, 255, 255, base.a);
+
+        spr.color = dim;
+        tween(spr)
+            .to(0.1, { color: peak })
+            .delay(Math.max(0, duration - 0.25))
+            .to(0.15, { color: base })
+            .call(() => {
+                this._hitLocked = false;
+            })
+            .start();
     }
 }

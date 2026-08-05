@@ -35,6 +35,8 @@ export class ShopSystem extends Component {
         EventBus.on(GameEvent.HERO_CREATED, this._onHeroCreated, this);
         EventBus.on(GameEvent.HERO_SELECTED, this._onHeroSelected, this);
         EventBus.on(GameEvent.SPEND_COIN_RESULT, this._onSpendResult, this);
+        // 与 SceneTileSystem / 测试强制解锁同步，保证伐木工等前置条件成立
+        EventBus.on(GameEvent.EXPAND_UNLOCKED, this._onExpandUnlocked, this);
     }
 
     protected onDestroy(): void {
@@ -43,6 +45,7 @@ export class ShopSystem extends Component {
         EventBus.off(GameEvent.HERO_CREATED, this._onHeroCreated, this);
         EventBus.off(GameEvent.HERO_SELECTED, this._onHeroSelected, this);
         EventBus.off(GameEvent.SPEND_COIN_RESULT, this._onSpendResult, this);
+        EventBus.off(GameEvent.EXPAND_UNLOCKED, this._onExpandUnlocked, this);
     }
 
     public get coin(): number {
@@ -272,8 +275,6 @@ export class ShopSystem extends Component {
                         isExpand: true,
                     });
                 }
-                // 任一拓展箭塔买成即通关（不依赖 ArrowTower.towerId 是否绑对）
-                EventBus.emit(GameEvent.GAME_CLEARED);
                 break;
             }
             default:
@@ -385,6 +386,16 @@ export class ShopSystem extends Component {
         if (!data.isExpand) {
             this._towerBuilt = true;
         }
+    }
+
+    private _onExpandUnlocked(data: { side: ExpandSide }): void {
+        if (data.side === ExpandSide.West) {
+            this._expandWest = true;
+        } else {
+            this._expandEast = true;
+        }
+        // 测试强制解锁时也视为已买过烤肉摊，避免其它 UI 仍被卡
+        this._cookedStallBought = true;
     }
 
     private _onHeroCreated(): void {

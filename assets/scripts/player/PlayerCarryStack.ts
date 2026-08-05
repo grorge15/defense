@@ -5,6 +5,9 @@ import { SortingOrder2D } from '../core/SortingOrder2D';
 
 const { ccclass, property } = _decorator;
 
+/** 同背负内类型层级步进：须大于 CARRY_STACK_VISUAL_MAX，避免高层 meat 盖住低层 coin */
+const CARRY_TYPE_LAYER_SCALE = 10;
+
 /**
  * 玩家背部资源堆叠：右→左顺序 金币、肉、木材；同种向上堆叠，视觉上限 10。
  */
@@ -36,6 +39,10 @@ export class PlayerCarryStack extends Component {
     ]);
 
     private _visuals: Map<ResourceType, Node[]> = new Map();
+
+    protected lateUpdate(): void {
+        this._syncCarryPriorities();
+    }
 
     public getCount(type: ResourceType): number {
         return this._counts.get(type) ?? 0;
@@ -94,6 +101,12 @@ export class PlayerCarryStack extends Component {
         }
     }
 
+    /** 从已实例化节点读 SortingOrder2D.orderOffset（prefab.data 读不到 Visual 子节点上的值） */
+    private _instanceLayerOffset(node: Node): number {
+        const sort = node.getComponent(SortingOrder2D) ?? node.getComponentInChildren(SortingOrder2D);
+        return (sort?.orderOffset ?? 0) * CARRY_TYPE_LAYER_SCALE;
+    }
+
     private _rebuildVisual(type: ResourceType): void {
         if (!this.carryRoot) {
             return;
@@ -121,9 +134,29 @@ export class PlayerCarryStack extends Component {
             const n = instantiate(prefab);
             n.parent = this.carryRoot;
             n.setPosition(x, i * this.stackGap, 0);
-            const sort = n.getComponent(SortingOrder2D) ?? n.getComponentInChildren(SortingOrder2D);
-            sort?.setAttachedToCarrier(true);
             list.push(n);
+        }
+        this._syncCarryPriorities();
+    }
+
+    private _syncCarryPriorities(): void {
+        if (!this.carryRoot || this._visuals.size === 0) {
+            return;
+        }
+        const baseY = Math.round(this.carryRoot.worldPosition.y);
+        for (const [, list] of this._visuals) {
+            for (let i = 0; i < list.length; i++) {
+                const n = list[i];
+                if (!n?.isValid) {
+                    continue;
+                }
+                const sort = n.getComponent(SortingOrder2D) ?? n.getComponentInChildren(SortingOrder2D);
+                if (!sort) {
+                    continue;
+                }
+                const layer = this._instanceLayerOffset(n);
+                sort.setFixedPriority(-baseY + layer + i);
+            }
         }
     }
 }

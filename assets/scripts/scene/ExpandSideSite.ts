@@ -3,6 +3,7 @@ import { ExpandSide, ShopItemType, StallType } from '../core/Enums';
 import { EventBus, GameEvent, ShopPurchasePayload } from '../core/GameEvent';
 import { PurchaseTrigger } from '../shop/PurchaseTrigger';
 import { Stall } from '../economy/Stall';
+import { DepositPoint } from '../economy/DepositPoint';
 import { ArrowTower } from '../combat/ArrowTower';
 import { ResourceEconomySystem } from '../economy/ResourceEconomySystem';
 
@@ -22,6 +23,7 @@ const { ccclass, property } = _decorator;
  * - buyLumberjack：伐木工购买（区域解锁后开放）
  * - towerBuildTrigger：拓展箭塔 BuildTrigger（区域解锁后开放）
  * - replaceWalls：拓展买完后要拆掉的墙段（拖进列表）
+ * - woodDeposits：拓展买完后显示的 Deposit_wood（开局 inactive）
  */
 @ccclass('ExpandSideSite')
 export class ExpandSideSite extends Component {
@@ -70,8 +72,20 @@ export class ExpandSideSite extends Component {
     })
     public replaceWalls: Node[] = [];
 
+    @property({
+        type: [Node],
+        tooltip: '拓展购买结算后显示的木头放置点 Deposit_wood（开局应 inactive；可拖多个）',
+    })
+    public woodDeposits: Node[] = [];
+
     @property({ tooltip: '木头摊 stallId（东 stall_wood_east / 西 stall_wood_west）' })
     public woodStallId: string = 'stall_wood_east';
+
+    @property({
+        tooltip:
+            '【测试开关】勾选后开局直接解锁本侧拓展：亮区域、拆 replaceWalls、开木头摊/伐木工/箭塔购买（跳过烤肉摊与付费）',
+    })
+    public debugForceUnlock: boolean = false;
 
     private _expandBuyUnlocked = false;
     private _sideOpened = false;
@@ -83,6 +97,10 @@ export class ExpandSideSite extends Component {
         EventBus.on(GameEvent.SHOP_PURCHASE_SUCCESS, this._onShopSuccess, this);
         EventBus.on(GameEvent.EXPAND_UNLOCKED, this._onExpandUnlocked, this);
         this.scheduleOnce(() => {
+            if (this.debugForceUnlock) {
+                this._applyDebugForceUnlock();
+                return;
+            }
             if (!this._expandBuyUnlocked) {
                 this._lockExpandBuy();
             }
@@ -154,31 +172,45 @@ export class ExpandSideSite extends Component {
         if (this.towerBuildTrigger) {
             this.towerBuildTrigger.itemType = ShopItemType.ExpandTower;
             this.towerBuildTrigger.expandSide = this.side;
+            if (this.expandTower) {
+                this.towerBuildTrigger.towerId = this.expandTower.towerId;
+            }
         }
         if (this.woodStall) {
             this.woodStall.stallId = this.woodStallId;
             this.woodStall.stallType = StallType.Wood;
         }
-        this._syncExpandTowerIdentity();
-    }
-
-    private _expectedTowerId(): string {
-        return this.side === ExpandSide.West ? 'tower_west' : 'tower_east';
-    }
-
-    /** 纠正场景误绑（如 Tower_West 被写成 tower_south1） */
-    private _syncExpandTowerIdentity(): void {
-        const id = this._expectedTowerId();
         if (this.expandTower) {
-            this.expandTower.towerId = id;
             this.expandTower.isExpandTower = true;
         }
-        if (this.towerBuildTrigger) {
-            this.towerBuildTrigger.towerId = id;
-            this.towerBuildTrigger.itemType = ShopItemType.ExpandTower;
-            this.towerBuildTrigger.expandSide = this.side;
-            this.towerBuildTrigger.extraTowerIds = [];
+        this._autoBindWoodDeposits();
+    }
+
+    private _autoBindWoodDeposits(): void {
+        if (this.woodDeposits.length > 0) {
+            return;
         }
+        const roots: Node[] = [];
+        if (this.areaRoot) {
+            roots.push(this.areaRoot);
+        }
+        roots.push(this.node);
+        const found: Node[] = [];
+        for (const root of roots) {
+            const walk = (n: Node) => {
+                const name = n.name.toLowerCase();
+                if (name === 'deposit_wood' || name === 'depositwood' || name.indexOf('deposit_wood') >= 0) {
+                    if (found.indexOf(n) < 0) {
+                        found.push(n);
+                    }
+                }
+                for (const c of n.children) {
+                    walk(c);
+                }
+            };
+            walk(root);
+        }
+        this.woodDeposits = found;
     }
 
     private _lockExpandBuy(): void {
@@ -201,6 +233,7 @@ export class ExpandSideSite extends Component {
         if (this.woodStallRoot) {
             this.woodStallRoot.active = false;
         }
+        this._setWoodDepositsActive(false);
     }
 
     private _onShopSuccess(data: ShopPurchasePayload): void {
@@ -247,7 +280,6 @@ export class ExpandSideSite extends Component {
             return;
         }
         this._sideOpened = true;
-        this._syncExpandTowerIdentity();
 
         if (this.buyExpand) {
             this.buyExpand.setUnlocked(false);
@@ -274,8 +306,6 @@ export class ExpandSideSite extends Component {
             }
             EventBus.emit(GameEvent.CMD_CREATE_HELPER, { stallId: stall.stallId });
         }
-
-        this._syncExpandTowerIdentity();
 
         if (this.buyLumberjack) {
             this.buyLumberjack.node.active = true;
@@ -304,6 +334,51 @@ export class ExpandSideSite extends Component {
         }
 
         this._hideReplaceWalls();
+        this._showWoodDeposits();
+    }
+
+    private _setWoodDepositsActive(active: boolean): void {
+        this._autoBindWoodDeposits();
+        for (const n of this.woodDeposits || []) {
+            if (n?.isValid) {
+                n.active = active;
+            }
+        }
+    }
+
+    /** 解锁后显示木头放置点，并注册进经济系统 */
+    private _showWoodDeposits(): void {
+        this._setWoodDepositsActive(true);
+        const eco = this.node.scene?.getComponentInChildren(ResourceEconomySystem);
+        if (!eco) {
+            return;
+        }
+        for (const n of this.woodDeposits || []) {
+            if (!n?.isValid) {
+                continue;
+            }
+            const dep =
+                n.getComponent(DepositPoint) ?? n.getComponentInChildren(DepositPoint);
+            if (!dep) {
+                continue;
+            }
+            if (eco.deposits.indexOf(dep) < 0) {
+                eco.deposits.push(dep);
+            }
+            // 与木头摊绑定，方便帮手取货
+            if (this.woodStall && !this.woodStall.boundDeposit) {
+                this.woodStall.boundDeposit = dep;
+                dep.boundStallId = this.woodStall.stallId;
+            }
+        }
+    }
+
+    /** 测试：开局直接完成本侧拓展解锁 */
+    private _applyDebugForceUnlock(): void {
+        this._expandBuyUnlocked = true;
+        EventBus.emit(GameEvent.CMD_UNLOCK_EXPAND, { side: this.side });
+        // SceneTileSystem 会再发 EXPAND_UNLOCKED；此处直接开内容避免时序依赖
+        this.openSideContent();
     }
 
     /** 拓展买完后隐藏占位墙并关掉碰撞 */

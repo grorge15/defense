@@ -37,7 +37,7 @@ export class ResourceEconomySystem extends Component {
     @property({ type: Prefab, tooltip: '金币表现预制体 pref_coin' })
     public coinPrefab: Prefab | null = null;
 
-    @property({ type: Node, tooltip: '掉落资源父节点' })
+    @property({ type: Node, tooltip: '掉落资源父节点（场景里 World/Drops；运行时木头挂在此下，名 Drop_Wood）' })
     public dropRoot: Node | null = null;
 
     @property({ type: PlayerCarryStack, tooltip: '玩家背负堆叠' })
@@ -149,11 +149,60 @@ export class ResourceEconomySystem extends Component {
     }
 
     private _onTreeChopped(data: TreeChoppedPayload): void {
-        // 规格：每次砍伐只生成 1 个木头 prefab（忽略旧 payload.amount / 场景 dropMin）
-        const base = new Vec3(data.worldPos.x, data.worldPos.y, 0);
-        const ox = (Math.random() - 0.5) * 20;
-        const oy = (Math.random() - 0.5) * 16;
-        this._spawnGroundResource(ResourceType.Wood, new Vec3(base.x + ox, base.y + oy, 0));
+        const count = Math.max(1, Math.floor(data.amount ?? 1));
+        if (!(this.woodPrefab ?? this.rawMeatPrefab)) {
+            console.warn(
+                '[ResourceEconomy] 砍树掉落失败：请绑定 woodPrefab（pref_wood / wood）或 rawMeatPrefab',
+            );
+            return;
+        }
+        const origin = new Vec3(data.worldPos.x, data.worldPos.y, 0);
+        for (let i = 0; i < count; i++) {
+            const ang = Math.random() * Math.PI * 2;
+            // 小范围散落（约 16–36），仍大于站树下瞬吸，且在 PICKUP_RANGE 内可吸
+            const dist = 16 + Math.random() * 20;
+            const land = new Vec3(
+                origin.x + Math.cos(ang) * dist,
+                origin.y + Math.sin(ang) * dist,
+                0,
+            );
+            this._spawnGroundDrop(ResourceType.Wood, origin, land);
+        }
+    }
+
+    /** 砍树掉落：抛物线落到地上，落地前不可拾取（避免站树下瞬吸） */
+    private _spawnGroundDrop(type: ResourceType, from: Vec3, land: Vec3): ResourceEntity | null {
+        const prefab =
+            type === ResourceType.Wood
+                ? this.woodPrefab ?? this.rawMeatPrefab
+                : type === ResourceType.CookedMeat
+                  ? this.cookedMeatPrefab ?? this.rawMeatPrefab
+                  : this.rawMeatPrefab;
+        if (!prefab) {
+            return null;
+        }
+        const node = instantiate(prefab);
+        const parent = this.dropRoot ?? this.node;
+        node.parent = parent;
+        node.name = type === ResourceType.Wood ? 'Drop_Wood' : `Drop_${type}`;
+        node.setWorldPosition(from.x, from.y + 20, 0);
+        let ent = node.getComponent(ResourceEntity);
+        if (!ent) {
+            ent = node.addComponent(ResourceEntity);
+        }
+        ent.resourceType = type;
+        ent.amount = 1;
+        ent.flying = true;
+        this._groundResources.push(ent);
+        const dropDur = Math.max(0.28, GameConstants.FLY_DURATION * 0.9);
+        const arc = GameConstants.FLY_ARC_HEIGHT * 0.55;
+        flyResourceTo(node, land, dropDur, arc, () => {
+            if (ent && ent.isValid) {
+                ent.flying = false;
+                node.setWorldPosition(land.x, land.y, 0);
+            }
+        });
+        return ent;
     }
 
     private _spawnGroundResource(type: ResourceType, worldPos: Vec3): ResourceEntity | null {
@@ -257,11 +306,15 @@ export class ResourceEconomySystem extends Component {
     }
 
     private _pickupNearestGround(data: PickupRequestPayload): void {
-        this._groundResources = this._groundResources.filter((r) => r && r.isValid && !r.flying);
+        // 只清无效实体；飞行中的仍保留，落地后才能继续被吸（勿用 !flying 过滤掉列表项）
+        this._groundResources = this._groundResources.filter((r) => r && r.isValid);
         let best: ResourceEntity | null = null;
         const range = GameConstants.PICKUP_RANGE;
         let bestD = range * range;
         for (const r of this._groundResources) {
+            if (r.flying) {
+                continue;
+            }
             if (data.resourceType !== undefined && r.resourceType !== data.resourceType) {
                 continue;
             }

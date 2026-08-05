@@ -182,28 +182,18 @@ export class ArrowTower extends Component {
     }
 
     private _onBuildCmd(data: { towerId: string; isExpand?: boolean }): void {
-        if (!this._towerIdMatch(data.towerId)) {
+        if (data.towerId !== this.towerId) {
             return;
         }
-        // ShopSystem 发出的拓展塔建造必须以 isExpand 为准（场景里西塔可能漏勾 / 绑错 id）
+        // ShopSystem 发出的拓展塔建造必须以 isExpand 为准（场景里西塔可能漏勾 isExpandTower）
         if (data.isExpand) {
             this.isExpandTower = true;
         }
         this.build();
     }
 
-    private _towerIdMatch(cmdId: string): boolean {
-        const a = (cmdId || '').trim().toLowerCase();
-        const b = (this.towerId || '').trim().toLowerCase();
-        return !!a && a === b;
-    }
-
     public build(): void {
         if (this._built) {
-            // 已建成时若是拓展塔，仍补发通关（避免首次漏听）
-            if (this.isExpandTower) {
-                EventBus.emit(GameEvent.GAME_CLEARED);
-            }
             return;
         }
         this._built = true;
@@ -226,14 +216,10 @@ export class ArrowTower extends Component {
     }
 
     private _onBuiltEvent(data: { towerId: string; isExpand?: boolean }): void {
-        if (!this._towerIdMatch(data.towerId)) {
+        if (data.towerId !== this.towerId) {
             return;
         }
-        const wasBuilt = this._built;
         this._built = true;
-        if (data.isExpand) {
-            this.isExpandTower = true;
-        }
         if (this.visual) {
             this.visual.active = true;
         }
@@ -245,10 +231,6 @@ export class ArrowTower extends Component {
         }
         if (!data.isExpand && !this.isExpandTower) {
             this.unlockHelperPurchase();
-        }
-        // 其它塔广播的拓展建成：本塔若也是拓展且刚建成，不重复；若 CMD 漏了 CLEAR，用事件兜底
-        if ((data.isExpand || this.isExpandTower) && !wasBuilt) {
-            EventBus.emit(GameEvent.GAME_CLEARED);
         }
     }
 

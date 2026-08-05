@@ -10,7 +10,7 @@ const { ccclass, property } = _decorator;
  */
 @ccclass('TutorialGuide')
 export class TutorialGuide extends Component {
-    @property({ type: Label, tooltip: '引导提示 Label（Guide/TipLabel）' })
+    @property({ tooltip: '引导提示 Label' })
     public tipLabel: Label | null = null;
 
     @property({ tooltip: '引导箭头/高亮根节点（可选）' })
@@ -28,7 +28,6 @@ export class TutorialGuide extends Component {
     private _phase: GuidePhase = GuidePhase.MoveHint;
     private _coin: number = GameConstants.PLAYER_INIT_COIN;
     private _helperGuideShown: boolean = false;
-    private _clearedShown: boolean = false;
 
     public get phase(): GuidePhase {
         return this._phase;
@@ -90,7 +89,6 @@ export class TutorialGuide extends Component {
 
     private _onTowerBuilt(data: { isExpand?: boolean }): void {
         if (data.isExpand) {
-            this._onClear();
             return;
         }
         if (this._phase <= GuidePhase.BuildTower) {
@@ -129,27 +127,15 @@ export class TutorialGuide extends Component {
     }
 
     private _onClear(): void {
-        this.showGameCleared();
-    }
-
-    /** 通关提示（可被 GameManager 兜底调用） */
-    public showGameCleared(): void {
-        if (this._clearedShown) {
-            return;
-        }
-        this._clearedShown = true;
         const msg = '本局完成！游戏结束';
         this._setPhase(GuidePhase.Finished, msg);
         if (this.clearPanel) {
             this.clearPanel.active = true;
         }
-        this._ensureTipLabel();
         const label = this.clearLabel ?? this.tipLabel;
         if (label) {
             label.node.active = true;
             label.string = msg;
-        } else {
-            console.warn('[TutorialGuide] 通关但未绑定 tipLabel/clearLabel，请在引导节点绑 Label');
         }
         console.log('[TutorialGuide]', msg);
     }

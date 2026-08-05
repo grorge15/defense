@@ -16,8 +16,8 @@ export class LumberjackNpc extends Component {
     @property({ tooltip: '移动速度' })
     public moveSpeed: number = 100;
 
-    @property({ tooltip: '砍伐间隔（秒）' })
-    public chopInterval: number = 0.8;
+    @property({ tooltip: '砍伐间隔（应 ≥ 树木受击锁定时长）' })
+    public chopInterval: number = 1.05;
 
     @property({ type: [TreeEntity], tooltip: '可砍伐树木列表（也可运行时扫描）' })
     public trees: TreeEntity[] = [];
