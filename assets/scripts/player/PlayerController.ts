@@ -10,7 +10,6 @@ import {
     IPhysics2DContact,
     ERigidBody2DType,
     Animation,
-    Sprite,
     tween,
     Tween,
 } from 'cc';
@@ -65,11 +64,8 @@ export class PlayerController extends Component {
     private _loco: LocoClip = 'idle';
     private _action: ActionClip | null = null;
     private _jumping: boolean = false;
-    /** true = 朝左；默认朝右 */
+    /** true = 朝左（Y=180）；默认朝右 */
     private _facingLeft: boolean = false;
-    private _bodySprite: Sprite | null = null;
-    private _carryRoot: Node | null = null;
-    private _carryBaseX: number = 0;
 
     public get state(): PlayerState {
         return this._state;
@@ -107,7 +103,6 @@ export class PlayerController extends Component {
         if (!this.anim) {
             this.anim = this.getComponent(Animation) ?? this.getComponentInChildren(Animation);
         }
-        this._resolveFacingTargets();
         this._setFacingLeft(false);
         this._playClip('idle');
     }
@@ -181,42 +176,17 @@ export class PlayerController extends Component {
         this._setLoco(moving ? 'run' : 'idle');
     }
 
-    private _resolveFacingTargets(): void {
-        const visual =
-            this.visualNode ?? this.node.getChildByName('frame_00000') ?? this.node;
-        this._bodySprite = visual.getComponent(Sprite) ?? visual.getComponentInChildren(Sprite);
-
-        this._carryRoot =
-            this.carryStack?.carryRoot ??
-            this.node.getChildByName('CarryRoot') ??
-            null;
-        if (this._carryRoot) {
-            this._carryBaseX = this._carryRoot.position.x;
-        }
-    }
-
     private _setFacingLeft(left: boolean): void {
-        if (!this._bodySprite || !this._carryRoot) {
-            this._resolveFacingTargets();
-        }
-        if (this._facingLeft === left && this._bodySprite?.flipX === left) {
+        if (this._facingLeft === left) {
             return;
         }
         this._facingLeft = left;
-
-        // RigidBody2D 会锁根节点旋转，改用 Sprite.flipX
-        if (this._bodySprite) {
-            this._bodySprite.flipX = left;
-        }
-
-        // 背负随朝向镜像：scale.x + 本地 X 翻到另一侧（保持在角色背后）
-        if (this._carryRoot?.isValid) {
-            const s = this._carryRoot.scale;
-            const sx = Math.abs(s.x) || 1;
-            this._carryRoot.setScale(left ? -sx : sx, s.y, s.z);
-            const p = this._carryRoot.position;
-            this._carryRoot.setPosition(left ? -this._carryBaseX : this._carryBaseX, p.y, p.z);
-        }
+        // RigidBody2D 会同步根节点角度，Y 旋转无效；用 scale.x 翻转整棵子树
+        // （frame 动画 + CarryRoot 背负一并朝向）
+        const s = this.node.scale;
+        this.node.setScale(left ? -Math.abs(s.x) || -1 : Math.abs(s.x) || 1, s.y, s.z);
+        // 清掉可能残留的 Y 旋转，避免与 scale 叠加
+        this.node.setRotationFromEuler(0, 0, 0);
     }
 
     private _setLoco(kind: LocoClip): void {
