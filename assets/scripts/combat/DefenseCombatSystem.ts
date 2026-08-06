@@ -36,6 +36,9 @@ export class DefenseCombatSystem extends Component {
     @property({ type: Prefab, tooltip: '英雄范围技能特效（英雄预制体未绑 skillPrefab 时回退）' })
     public defaultHeroSkillPrefab: Prefab | null = null;
 
+    @property({ type: Node, tooltip: '英雄大招范围（City/skillPos）；创建英雄时写入 Hero.skillBounds' })
+    public heroSkillBounds: Node | null = null;
+
     @property({ type: Node, tooltip: '英雄挂载父节点' })
     public heroRoot: Node | null = null;
 
@@ -200,6 +203,9 @@ export class DefenseCombatSystem extends Component {
         hero.heroType = data.heroType;
         hero.depositId = depositId;
         hero.spawner = this.spawner;
+        if (this.heroSkillBounds) {
+            hero.skillBounds = this.heroSkillBounds;
+        }
         if (!hero.wavePrefab && this.defaultHeroWavePrefab) {
             hero.wavePrefab = this.defaultHeroWavePrefab;
         }

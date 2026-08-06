@@ -54,6 +54,14 @@ export class GameConstants {
     public static readonly HERO_SKILL_COL_COUNT = 4;
     public static readonly HERO_SKILL_CELL_SPACING = 60;
     public static readonly HERO_SKILL_START_DELAY = 0.15;
+    /** 大招从起手到英雄恢复普攻的总时长（秒） */
+    public static readonly HERO_SKILL_TOTAL_DURATION = 3.5;
+    /** 单个 effect 范围秒杀半径 */
+    public static readonly HERO_SKILL_HIT_RADIUS = 72;
+    /** 落雷/火箭下落时长 */
+    public static readonly HERO_SKILL_SKY_FALL = 0.15;
+    /** 最后一个 effect 生成后再等一会再恢复普攻（给命中/特效留时间） */
+    public static readonly HERO_SKILL_END_PADDING = 0.4;
 
     // —— 资源堆叠表现 ——
     public static readonly CARRY_STACK_VISUAL_MAX = 10;

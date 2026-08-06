@@ -2557,6 +2557,9 @@
     ],
     "defaultHeroWavePrefab": null,
     "defaultHeroSkillPrefab": null,
+    "heroSkillBounds": {
+      "__id__": 615
+    },
     "heroRoot": {
       "__id__": 315
     },
@@ -19359,8 +19362,8 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 255.495,
-      "y": 456.072,
+      "x": 208.799,
+      "y": 404.247,
       "z": 0
     },
     "_lrot": {
@@ -19398,8 +19401,8 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 143.1,
-      "height": 200.4
+      "width": 179,
+      "height": 238.7
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -19456,8 +19459,8 @@
     "__prefab": null,
     "_skew": {
       "__type__": "cc.Vec2",
-      "x": -58.2,
-      "y": 44
+      "x": -55.2,
+      "y": 41.6
     },
     "_rotational": false,
     "_id": "82J8pkfxVLlrCtb6ibP9V0"
@@ -25230,16 +25233,22 @@
     "typeA": 2,
     "typeB": 1,
     "heroPrefabs": [
-      null,
       {
-        "__uuid__": "1b0a2687-c71d-4a74-bcb2-7bd72414c592",
+        "__uuid__": "49834393-1238-43de-867c-38b53849829e",
         "__expectedType__": "cc.Prefab"
       },
       {
-        "__uuid__": "77b7438d-5198-4319-9a44-8eb90a7a47bd",
+        "__uuid__": "8637b3ee-90b1-4f21-bca2-6ab574a90aee",
         "__expectedType__": "cc.Prefab"
       },
-      null
+      {
+        "__uuid__": "f7bfdce7-b40b-4ab1-b56a-5dabf2980ee1",
+        "__expectedType__": "cc.Prefab"
+      },
+      {
+        "__uuid__": "ccf5bf85-5dd8-4e73-bb20-12dca92c7e3b",
+        "__expectedType__": "cc.Prefab"
+      }
     ],
     "combat": null,
     "autoPlaceCards": false,
