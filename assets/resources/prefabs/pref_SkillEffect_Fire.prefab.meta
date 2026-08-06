@@ -2,12 +2,12 @@
   "ver": "1.1.50",
   "importer": "prefab",
   "imported": true,
-  "uuid": "77b7438d-5198-4319-9a44-8eb90a7a47bd",
+  "uuid": "bab487c1-78ea-4000-99c0-efc991d1b4df",
   "files": [
     ".json"
   ],
   "subMetas": {},
   "userData": {
-    "syncNodeName": "heroLingtning"
+    "syncNodeName": "pref_SkillEffect_Fire"
   }
 }

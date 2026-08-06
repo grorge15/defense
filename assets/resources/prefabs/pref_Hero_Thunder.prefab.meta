@@ -2,12 +2,12 @@
   "ver": "1.1.50",
   "importer": "prefab",
   "imported": true,
-  "uuid": "b898a676-352a-479b-9229-cf8e2075ced8",
+  "uuid": "f7bfdce7-b40b-4ab1-b56a-5dabf2980ee1",
   "files": [
     ".json"
   ],
   "subMetas": {},
   "userData": {
-    "syncNodeName": "arrow"
+    "syncNodeName": "pref_Hero_Thunder"
   }
 }

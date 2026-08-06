@@ -1,6 +1,7 @@
 import { _decorator, Component, Node, Vec3, Animation } from 'cc';
 import { NpcWorkState } from '../core/Enums';
 import { EventBus, GameEvent } from '../core/GameEvent';
+import { playAnimClip } from '../core/AnimPlay';
 import { TreeEntity } from '../scene/TreeEntity';
 
 const { ccclass, property } = _decorator;
@@ -28,6 +29,7 @@ export class LumberjackNpc extends Component {
     private _state: NpcWorkState = NpcWorkState.Idle;
     private _target: TreeEntity | null = null;
     private _chopTimer: number = 0;
+    private _bodyClip: 'idle' | 'walk' | 'chop' = 'idle';
 
     protected update(dt: number): void {
         if (!this._target || !this._target.canChop) {
@@ -35,6 +37,7 @@ export class LumberjackNpc extends Component {
         }
         if (!this._target) {
             this._state = NpcWorkState.Idle;
+            this._setBodyClip('idle');
             return;
         }
         this._state = NpcWorkState.Working;
@@ -44,18 +47,46 @@ export class LumberjackNpc extends Component {
         const dy = tp.y - cur.y;
         const len = Math.sqrt(dx * dx + dy * dy);
         if (len > 30) {
+            this._setBodyClip('walk');
             const step = this.moveSpeed * dt;
             this.node.setWorldPosition(cur.x + (dx / len) * step, cur.y + (dy / len) * step, 0);
             return;
         }
+        if (this._bodyClip !== 'chop') {
+            this._setBodyClip('idle');
+        }
         this._chopTimer += dt;
-        if (this._chopTimer >= this.chopInterval) {
+        if (this._chopTimer >= this.chopInterval && this._bodyClip !== 'chop') {
             this._chopTimer = 0;
-            if (this.anim) {
-                this.anim.play('chop');
-            }
+            this._playChop();
             this._target.chop(this.npcId);
         }
+    }
+
+    private _setBodyClip(kind: 'idle' | 'walk'): void {
+        if (this._bodyClip === kind) {
+            return;
+        }
+        this._bodyClip = kind;
+        this._playClip(kind);
+    }
+
+    private _playChop(): void {
+        this._bodyClip = 'chop';
+        this._playClip('chop');
+        this.scheduleOnce(() => {
+            if (this._bodyClip === 'chop') {
+                this._bodyClip = 'idle';
+                this._playClip('idle');
+            }
+        }, 7 / 60);
+    }
+
+    private _playClip(kind: 'idle' | 'walk' | 'chop'): void {
+        if (!this.anim) {
+            this.anim = this.getComponent(Animation) ?? this.getComponentInChildren(Animation);
+        }
+        playAnimClip(this.anim, kind, kind === 'chop' ? { restart: true } : undefined);
     }
 
     private _pickTree(): void {

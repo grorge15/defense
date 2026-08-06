@@ -102,7 +102,7 @@ export const ReferenceBindingTable: Record<string, Record<string, string>> = {
 
   // 经济
   'GameRoot/Systems/Economy/ResourceEconomySystem': {
-    playerCarry: 'GameRoot/Player/PlayerCarryStack',
+    carryRoot: 'GameRoot/Player/CarryRoot',
     dropRoot: 'GameRoot/World/Drops',
     deposits: '（数组）GameRoot/World/City/Deposits 下全部 DepositPoint',
     stalls: '（数组）GameRoot/World/City/Stalls 下全部 Stall',

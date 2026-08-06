@@ -1,8 +1,10 @@
 import { _decorator, Component, Node, Prefab, instantiate, Vec3, Animation, Enum } from 'cc';
 import { HeroType, HeroCombatPhase } from '../core/Enums';
 import { GameConstants } from '../core/GameConstants';
+import { playAnimClip } from '../core/AnimPlay';
 import { Enemy } from './Enemy';
 import { EnemySpawner } from './EnemySpawner';
+import { ProjectileMovement } from './ProjectileMovement';
 
 const { ccclass, property } = _decorator;
 
@@ -66,6 +68,13 @@ export class Hero extends Component {
         return this._phase;
     }
 
+    protected onLoad(): void {
+        if (!this.anim) {
+            this.anim = this.getComponent(Animation) ?? this.getComponentInChildren(Animation);
+        }
+        this._playIdle();
+    }
+
     protected update(dt: number): void {
         if (!this.spawner) {
             this.spawner = this.node.scene?.getComponentInChildren(EnemySpawner) ?? null;
@@ -88,6 +97,10 @@ export class Hero extends Component {
         }
     }
 
+    private _playIdle(): void {
+        playAnimClip(this.anim, 'idle');
+    }
+
     private _fireNormal(): void {
         if (!this.spawner || !this.wavePrefab) {
             return;
@@ -98,47 +111,28 @@ export class Hero extends Component {
             return;
         }
         this._attacking = true;
-        if (this.anim) {
-            this.anim.play('attack');
-        }
+        playAnimClip(this.anim, 'attack', { restart: true });
         const wave = instantiate(this.wavePrefab);
         wave.parent = this.node.parent;
         wave.setWorldPosition(from.x, from.y, 0);
         const dest = target.node.worldPosition.clone();
         const self = this;
         const depositId = this.depositId;
-        // 简单直线飞向目标
-        const duration = 0.35;
-        let t = 0;
-        const start = from.clone();
-        const updateFn = (dt: number) => {
-            if (!wave.isValid) {
-                return;
+        const proj = wave.getComponent(ProjectileMovement) ?? wave.addComponent(ProjectileMovement);
+        proj.launchTo(dest, 0.35, () => {
+            if (target.alive) {
+                target.kill(true, depositId);
             }
-            t += dt;
-            const k = Math.min(1, t / duration);
-            wave.setWorldPosition(
-                start.x + (dest.x - start.x) * k,
-                start.y + (dest.y - start.y) * k,
-                0,
-            );
-            if (k >= 1) {
-                if (target.alive) {
-                    target.kill(true, depositId);
-                }
-                wave.destroy();
-                self._attacking = false;
-                self.unschedule(updateFn);
-            }
-        };
-        this.schedule(updateFn);
+            self._attacking = false;
+            self._playIdle();
+        });
     }
 
     private async _castSkill(): Promise<void> {
         this._phase = HeroCombatPhase.SkillCasting;
         this._skillTimer = 0;
         if (this.anim) {
-            this.anim.play('skill');
+            playAnimClip(this.anim, 'skill', { restart: true });
         }
         await this._wait(this.skillStartDelay);
 
@@ -163,6 +157,7 @@ export class Hero extends Component {
 
         this._phase = HeroCombatPhase.NormalAttack;
         this._normalTimer = 0;
+        this._playIdle();
     }
 
     private _pickSkillOrigin(): Vec3 {

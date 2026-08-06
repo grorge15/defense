@@ -26,6 +26,9 @@
     "_components": [
       {
         "__id__": 8
+      },
+      {
+        "__id__": 11
       }
     ],
     "_prefab": {
@@ -161,7 +164,7 @@
       "a": 255
     },
     "_spriteFrame": {
-      "__uuid__": "017da1b1-9270-4f6e-931e-59181dda75de@f9941",
+      "__uuid__": "507e93c7-3f2d-4ba3-b104-1e154ba05c42@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
     "_type": 0,
@@ -216,7 +219,9 @@
       null,
       null
     ],
-    "anim": null,
+    "anim": {
+      "__id__": 11
+    },
     "_id": ""
   },
   {
@@ -234,5 +239,42 @@
     "fileId": "c46/YsCPVOJYA4mWEpNYRx",
     "instance": null,
     "targetOverrides": null
+  },
+  {
+    "__type__": "cc.Animation",
+    "_name": "",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "node": {
+      "__id__": 1
+    },
+    "_enabled": true,
+    "__prefab": {
+      "__id__": 12
+    },
+    "playOnLoad": true,
+    "_clips": [
+      {
+        "__uuid__": "1cda1d83-638f-4468-be43-e16785e11c11",
+        "__expectedType__": "cc.AnimationClip"
+      },
+      {
+        "__uuid__": "29f1b60b-f27a-4410-9534-8e8241dc30d1",
+        "__expectedType__": "cc.AnimationClip"
+      },
+      {
+        "__uuid__": "a61f833e-71a0-4bfe-89c5-f2f003d65d3f",
+        "__expectedType__": "cc.AnimationClip"
+      }
+    ],
+    "_defaultClip": {
+      "__uuid__": "1cda1d83-638f-4468-be43-e16785e11c11",
+      "__expectedType__": "cc.AnimationClip"
+    },
+    "_id": ""
+  },
+  {
+    "__type__": "cc.CompPrefabInfo",
+    "fileId": "ljackAnimPF01"
   }
 ]

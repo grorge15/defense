@@ -16,6 +16,7 @@ import {
     HorizontalTextAlignment,
     VerticalTextAlignment,
     Overflow,
+    Animation,
 } from 'cc';
 import { ResourceType } from '../core/Enums';
 import { GameConstants } from '../core/GameConstants';
@@ -62,9 +63,14 @@ export class Customer extends Component {
     @property({ type: Enum(ResourceType), tooltip: '需求资源类型' })
     public demandType: ResourceType = ResourceType.RawMeat;
 
+    @property({ type: Animation, tooltip: '角色序列帧 Animation（4 套 variant）' })
+    public anim: Animation | null = null;
+
     private _demand: number = 0;
     private _maxDemand: number = 0;
     private _done: boolean = false;
+    private _variantIndex: number = 0;
+    private _walking: boolean = false;
     private _itemBaseScale: Vec3 = new Vec3(1, 1, 1);
     /** 以生肉 ItemIcon 的显示尺寸为基准，烤肉2 等小图放大到同框 */
     private _itemIconBox: Size | null = null;
@@ -87,6 +93,7 @@ export class Customer extends Component {
     public setupRandomDemand(type: ResourceType): void {
         this._ensureDemandUI();
         this.demandType = type;
+        this._variantIndex = Math.floor(Math.random() * 4);
         const min = GameConstants.CUSTOMER_DEMAND_MIN;
         const max = Math.min(GameConstants.CUSTOMER_DEMAND_MAX, GameConstants.CUSTOMER_DEMAND_HARD_CAP);
         this._demand = min + Math.floor(Math.random() * (max - min + 1));
@@ -98,6 +105,38 @@ export class Customer extends Component {
         this._applyDemandIcon();
         this._refreshUI(false);
         this.setShowDemand(false);
+        this._walking = false;
+        this._playBodyClip('idle');
+    }
+
+    /** 切换 idle / walk（clip 名 Customer_{variant}_idle|walk） */
+    public setWalking(walking: boolean): void {
+        if (this._walking === walking && this.anim?.getState(this._clipName(walking ? 'walk' : 'idle'))?.isPlaying) {
+            return;
+        }
+        this._walking = walking;
+        this._playBodyClip(walking ? 'walk' : 'idle');
+    }
+
+    private _clipName(kind: 'idle' | 'walk'): string {
+        return `Customer_${this._variantIndex}_${kind}`;
+    }
+
+    private _playBodyClip(kind: 'idle' | 'walk'): void {
+        if (!this.anim) {
+            this.anim = this.getComponent(Animation) ?? this.getComponentInChildren(Animation);
+        }
+        if (!this.anim) {
+            return;
+        }
+        const name = this._clipName(kind);
+        this.anim.play(name);
+        // 立刻采样第 0 帧，避免出生时仍显示预制体默认图
+        const state = this.anim.getState(name);
+        if (state) {
+            state.time = 0;
+            state.sample();
+        }
     }
 
     /**
@@ -196,6 +235,7 @@ export class Customer extends Component {
     }
 
     public leave(direction: Vec3, onDone: () => void): void {
+        this.setWalking(true);
         const start = this.node.worldPosition.clone();
         const end = new Vec3(start.x + direction.x, start.y + direction.y, 0);
         const dur = Math.max(0.35, GameConstants.CUSTOMER_LEAVE_ANIM_SEC);

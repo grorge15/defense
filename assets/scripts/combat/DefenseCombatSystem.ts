@@ -8,6 +8,7 @@ import { ArrowTower } from './ArrowTower';
 import { PlayerController } from '../player/PlayerController';
 import { TowerMountTrigger } from '../player/TowerMountTrigger';
 import { HeroCdUI } from '../ui/HeroCdUI';
+import { ProjectileMovement } from './ProjectileMovement';
 
 const { ccclass, property } = _decorator;
 
@@ -51,11 +52,26 @@ export class DefenseCombatSystem extends Component {
     private _towersBuilt: number = 0;
 
     protected onLoad(): void {
+        this._resolveRefs();
         EventBus.on(GameEvent.PLAYER_STATE_CHANGED, this._onPlayerState, this);
         EventBus.on(GameEvent.CMD_CREATE_HERO, this._onCreateHero, this);
         EventBus.on(GameEvent.CMD_BUILD_TOWER, this._onBuildTower, this);
         EventBus.on(GameEvent.REQUEST_MOUNT_TOWER, this._onMountTower, this);
         EventBus.on(GameEvent.REQUEST_DISMOUNT_TOWER, this._onDismountTower, this);
+    }
+
+    protected start(): void {
+        // Systems 比 Player 先 onLoad，这里再补一次引用
+        this._resolveRefs();
+    }
+
+    private _resolveRefs(): void {
+        if (!this.player) {
+            this.player = this.node.scene?.getComponentInChildren(PlayerController) ?? null;
+        }
+        if (!this.spawner) {
+            this.spawner = this.node.scene?.getComponentInChildren(EnemySpawner) ?? null;
+        }
     }
 
     protected onDestroy(): void {
@@ -67,9 +83,15 @@ export class DefenseCombatSystem extends Component {
     }
 
     protected update(dt: number): void {
+        this._resolveRefs();
         if (!this.spawner || !this.player) {
             return;
         }
+        // 直接读玩家世界坐标，避免仅依赖事件缓存导致判空
+        const wp = this.player.worldPos;
+        this._playerPos.set(wp.x, wp.y, 0);
+        this._playerState = this.player.state;
+
         if (this._playerState === PlayerState.Ground) {
             this._meleeTimer -= dt;
             if (this._meleeTimer <= 0) {
@@ -95,7 +117,7 @@ export class DefenseCombatSystem extends Component {
             return;
         }
         this._meleeTimer = this.meleeCooldown;
-        // 一击秒杀最近一个
+        // 先结算击杀，再播动画，避免缺 clip / play 异常导致打不出伤害
         let nearest = targets[0];
         let best = Number.MAX_VALUE;
         for (const t of targets) {
@@ -107,6 +129,11 @@ export class DefenseCombatSystem extends Component {
             }
         }
         nearest.kill(false);
+        try {
+            this.player.playMeleeAttack();
+        } catch (e) {
+            console.warn('[DefenseCombat] playMeleeAttack failed', e);
+        }
     }
 
     private _tryTowerShot(): void {
@@ -118,21 +145,19 @@ export class DefenseCombatSystem extends Component {
             return;
         }
         this._towerFiring = true;
+        this.player.playRangeAttack();
         const arrow = instantiate(this.arrowPrefab);
         arrow.parent = this.node;
         arrow.setWorldPosition(this._playerPos.x, this._playerPos.y, 0);
         const dest = target.node.worldPosition.clone();
         const delay = this.arrowHitDelay;
-        this.scheduleOnce(() => {
-            if (arrow.isValid) {
-                arrow.setWorldPosition(dest.x, dest.y, 0);
-                arrow.destroy();
-            }
+        const proj = arrow.getComponent(ProjectileMovement) ?? arrow.addComponent(ProjectileMovement);
+        proj.launchTo(dest, delay, () => {
             if (target.alive) {
                 target.kill(false);
             }
             this._towerFiring = false;
-        }, delay);
+        });
     }
 
     /** HeroType 按下标取预制体 */

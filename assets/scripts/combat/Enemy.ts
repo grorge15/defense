@@ -13,9 +13,12 @@ import {
 } from 'cc';
 import { EventBus, GameEvent, EnemyDiedPayload } from '../core/GameEvent';
 import { GameConstants } from '../core/GameConstants';
+import { playAnimClip } from '../core/AnimPlay';
 import { Wall } from './Wall';
 
 const { ccclass, property } = _decorator;
+
+type BodyClip = 'idle' | 'walk' | 'attack' | 'dead';
 
 /**
  * 敌人：向目标移动，遇城墙则攻击；任意攻击一击秒杀；死亡掉肉由经济系统处理。
@@ -31,7 +34,7 @@ export class Enemy extends Component {
     @property({ tooltip: '攻击城墙伤害' })
     public wallDamage: number = 5;
 
-    @property({ tooltip: '动画组件（可选，子节点）' })
+    @property({ type: Animation, tooltip: 'idle / walk / attack / dead 序列帧' })
     public anim: Animation | null = null;
 
     private _rb: RigidBody2D | null = null;
@@ -43,6 +46,9 @@ export class Enemy extends Component {
     private _wallTarget: Wall | null = null;
     private _killedByHero: boolean = false;
     private _heroDepositId: string | undefined;
+    private _bodyClip: BodyClip = 'idle';
+    private _attacking: boolean = false;
+    private _deathEmitted: boolean = false;
 
     public get alive(): boolean {
         return this._alive;
@@ -71,6 +77,15 @@ export class Enemy extends Component {
             col.on(Contact2DType.BEGIN_CONTACT, this._onHitWall, this);
             col.on(Contact2DType.END_CONTACT, this._onLeaveWall, this);
         }
+        if (!this.anim) {
+            this.anim = this.getComponent(Animation) ?? this.getComponentInChildren(Animation);
+        }
+        this._playClip('idle');
+    }
+
+    protected start(): void {
+        this._bodyClip = 'idle';
+        this._playClip('idle');
     }
 
     protected onDestroy(): void {
@@ -94,10 +109,12 @@ export class Enemy extends Component {
         if (this._blockedByWall) {
             this._setVelocity(0, 0);
             this._attackTimer += dt;
-            if (this._attackTimer >= this.attackInterval) {
+            if (this._attackTimer >= this.attackInterval && !this._attacking) {
                 this._attackTimer = 0;
                 this._playAttack();
                 this._wallTarget?.takeDamage(this.wallDamage);
+            } else if (!this._attacking) {
+                this._setBodyClip('idle');
             }
             return;
         }
@@ -108,10 +125,11 @@ export class Enemy extends Component {
         const len = Math.sqrt(dx * dx + dy * dy);
         if (len < 2) {
             this._setVelocity(0, 0);
+            this._setBodyClip('idle');
             return;
         }
         this._setVelocity((dx / len) * this.moveSpeed, (dy / len) * this.moveSpeed);
-        this._playMove();
+        this._setBodyClip('walk');
     }
 
     private _setVelocity(x: number, y: number): void {
@@ -143,16 +161,38 @@ export class Enemy extends Component {
         }
     }
 
-    private _playMove(): void {
-        if (this.anim && this.anim.getState('move') && !this.anim.getState('move')!.isPlaying) {
-            this.anim.play('move');
+    private _setBodyClip(kind: 'idle' | 'walk'): void {
+        if (this._attacking || this._bodyClip === kind) {
+            return;
         }
+        this._bodyClip = kind;
+        this._playClip(kind);
     }
 
     private _playAttack(): void {
-        if (this.anim) {
-            this.anim.play('attack');
+        this._attacking = true;
+        this._bodyClip = 'attack';
+        const state = this._playClip('attack');
+        const clip = state?.clip;
+        const dur = clip ? Math.max(clip.duration / Math.max(clip.speed, 0.01), 0.05) : 0.7;
+        this.unschedule(this._clearAttack);
+        this.scheduleOnce(this._clearAttack, dur);
+    }
+
+    private _clearAttack = (): void => {
+        this._attacking = false;
+        if (!this._alive) {
+            return;
         }
+        this._bodyClip = 'idle';
+        this._playClip('idle');
+    };
+
+    private _playClip(kind: BodyClip) {
+        if (!this.anim) {
+            this.anim = this.getComponent(Animation) ?? this.getComponentInChildren(Animation);
+        }
+        return playAnimClip(this.anim, kind);
     }
 
     /**
@@ -165,19 +205,30 @@ export class Enemy extends Component {
         this._alive = false;
         this._killedByHero = byHero;
         this._heroDepositId = heroDepositId;
+        this._attacking = false;
+        this.unschedule(this._clearAttack);
         this._setVelocity(0, 0);
         if (this._rb) {
             this._rb.enabled = false;
         }
-        if (this.anim) {
-            this.anim.play('die');
-            this.anim.once(Animation.EventType.FINISHED, () => this._emitDeathAndDestroy());
-        } else {
-            this._emitDeathAndDestroy();
+        this._bodyClip = 'dead';
+        const state = this._playClip('dead');
+        if (state) {
+            const clip = state.clip;
+            const dur = clip ? Math.max(clip.duration / Math.max(clip.speed, 0.01), 0.05) : 0.5;
+            this.anim?.once(Animation.EventType.FINISHED, this._emitDeathAndDestroy, this);
+            this.scheduleOnce(this._emitDeathAndDestroy, dur + 0.05);
+            return;
         }
+        this._emitDeathAndDestroy();
     }
 
     private _emitDeathAndDestroy(): void {
+        if (this._deathEmitted || !this.node?.isValid) {
+            return;
+        }
+        this._deathEmitted = true;
+        this.unschedule(this._emitDeathAndDestroy);
         const wp = this.node.worldPosition;
         const payload: EnemyDiedPayload = {
             worldPos: { x: wp.x, y: wp.y, z: 0 },

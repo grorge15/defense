@@ -17,6 +17,7 @@ alwaysApply: true
 5. **箭塔购买**：付清 → `CMD_BUILD_TOWER`(可多 id) → 已有 `ArrowTower` 显示 Visual，**不 new Tower**。
 6. **解锁顺序（勿颠倒）**：建塔 → **只解锁帮手** → 买帮手成功 → **才解锁英雄购买 UI**。
 7. 跨系统只用 EventBus；数值写死 `GameConstants`；可配点一律 `@property` 场景绑。
+8. **AnimationClip 不预置**：项目里通常没有现成的 `.anim`；做角色/特效 prefab 时**自行从序列帧生成** AnimationClip（如 `tools/gen-hero-anims.js` 或同等脚本），再写入 prefab 的 `Animation._clips`；clip 名须与脚本一致（如 Hero：`idle`/`attack`/`skill`）。
 
 ## 技术基线
 

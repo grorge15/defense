@@ -40,6 +40,12 @@ export class PlayerCarryStack extends Component {
 
     private _visuals: Map<ResourceType, Node[]> = new Map();
 
+    protected onLoad(): void {
+        if (!this.carryRoot) {
+            this.carryRoot = this.node.getChildByName('CarryRoot');
+        }
+    }
+
     protected lateUpdate(): void {
         this._syncCarryPriorities();
     }

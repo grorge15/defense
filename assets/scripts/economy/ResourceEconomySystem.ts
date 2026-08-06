@@ -40,8 +40,8 @@ export class ResourceEconomySystem extends Component {
     @property({ type: Node, tooltip: '掉落资源父节点（场景里 World/Drops；运行时木头挂在此下，名 Drop_Wood）' })
     public dropRoot: Node | null = null;
 
-    @property({ type: PlayerCarryStack, tooltip: '玩家背负堆叠' })
-    public playerCarry: PlayerCarryStack | null = null;
+    @property({ type: Node, tooltip: '玩家背上 CarryRoot 节点（父节点需挂 PlayerCarryStack）' })
+    public carryRoot: Node | null = null;
 
     @property({ type: [DepositPoint], tooltip: '场景所有放置点' })
     public deposits: DepositPoint[] = [];
@@ -51,12 +51,58 @@ export class ResourceEconomySystem extends Component {
 
     private _coin: number = GameConstants.PLAYER_INIT_COIN;
     private _groundResources: ResourceEntity[] = [];
+    private _carryStack: PlayerCarryStack | null = null;
 
     public get coin(): number {
         return this._coin;
     }
 
+    /**
+     * 兼容旧场景序列化 / targetOverrides 写入 playerCarry。
+     * 无 @property，不进 Inspector；写入时转存到 carryRoot。
+     */
+    public get playerCarry(): PlayerCarryStack | null {
+        return this._getCarryStack();
+    }
+
+    public set playerCarry(v: PlayerCarryStack | null) {
+        if (!v) {
+            return;
+        }
+        this._carryStack = v;
+        this.carryRoot = v.carryRoot ?? v.node.getChildByName('CarryRoot') ?? this.carryRoot;
+    }
+
+    /** 由 CarryRoot 解析出的背负堆叠组件 */
+    private _getCarryStack(): PlayerCarryStack | null {
+        if (this._carryStack?.isValid) {
+            return this._carryStack;
+        }
+        this._carryStack = this._resolveCarryStack();
+        return this._carryStack;
+    }
+
+    private _resolveCarryStack(): PlayerCarryStack | null {
+        if (this.carryRoot?.isValid) {
+            const fromParent =
+                this.carryRoot.parent?.getComponent(PlayerCarryStack) ??
+                this.carryRoot.getComponent(PlayerCarryStack);
+            if (fromParent) {
+                if (!fromParent.carryRoot) {
+                    fromParent.carryRoot = this.carryRoot;
+                }
+                return fromParent;
+            }
+        }
+        return this.node.scene?.getComponentInChildren(PlayerCarryStack) ?? null;
+    }
+
     protected onLoad(): void {
+        if (!this.carryRoot) {
+            const stack = this.node.scene?.getComponentInChildren(PlayerCarryStack);
+            this.carryRoot = stack?.carryRoot ?? stack?.node.getChildByName('CarryRoot') ?? null;
+        }
+        this._carryStack = this._resolveCarryStack();
         EventBus.on(GameEvent.ENEMY_DIED, this._onEnemyDied, this);
         EventBus.on(GameEvent.REQUEST_PICKUP_RESOURCE, this._onPickupRequest, this);
         EventBus.on(GameEvent.REQUEST_PLAYER_DELIVER_STALL, this._onPlayerDeliverStall, this);
@@ -101,14 +147,14 @@ export class ResourceEconomySystem extends Component {
 
     /** 背部金币堆叠与钱包数量对齐（视觉最多 CARRY_STACK_VISUAL_MAX） */
     private _syncCarryCoins(): void {
-        if (!this.playerCarry) {
+        if (!this._getCarryStack()) {
             return;
         }
         // 飞币能用 Economy.coinPrefab 时，也补到背上，避免只飞不显示堆叠
-        if (!this.playerCarry.coinPrefab && this.coinPrefab) {
-            this.playerCarry.coinPrefab = this.coinPrefab;
+        if (!this._getCarryStack().coinPrefab && this.coinPrefab) {
+            this._getCarryStack().coinPrefab = this.coinPrefab;
         }
-        this.playerCarry.setCount(ResourceType.Coin, this._coin);
+        this._getCarryStack().setCount(ResourceType.Coin, this._coin);
     }
 
     private _onSpendRequest(data: { amount: number; reason?: string }): void {
@@ -290,7 +336,7 @@ export class ResourceEconomySystem extends Component {
         // 优先拾取指定放置点
         if (data.depositId) {
             const dep = this.getDeposit(data.depositId);
-            if (dep && dep.stock > 0 && this.playerCarry) {
+            if (dep && dep.stock > 0 && this._getCarryStack()) {
                 if (dep.resourceType === ResourceType.Coin) {
                     this._pickupCoinFromDeposit(dep, data);
                 } else {
@@ -346,14 +392,14 @@ export class ResourceEconomySystem extends Component {
     /** 金币飞向背部的纯表现（不改数量） */
     private _flyCoinVisualOnly(from: Vec3): void {
         const prefab = this._prefabFor(ResourceType.Coin);
-        const carryRoot = this.playerCarry?.carryRoot;
-        if (!prefab || !carryRoot) {
+        const root = this.carryRoot ?? this._getCarryStack()?.carryRoot;
+        if (!prefab || !root) {
             return;
         }
         const n = instantiate(prefab);
         n.parent = this.dropRoot ?? this.node;
         n.setWorldPosition(from);
-        flyResourceTo(n, carryRoot.worldPosition, undefined, undefined, () => {
+        flyResourceTo(n, root.worldPosition, undefined, undefined, () => {
             if (n.isValid) {
                 n.destroy();
             }
@@ -380,14 +426,14 @@ export class ResourceEconomySystem extends Component {
                 best = r;
             }
         }
-        if (!best || !this.playerCarry) {
+        if (!best || !this._getCarryStack()) {
             return;
         }
         best.flying = true;
         const type = best.resourceType;
         const from = best.node.worldPosition.clone();
-        const carryRoot = this.playerCarry.carryRoot;
-        const dest = carryRoot ? carryRoot.worldPosition : new Vec3(data.worldPos.x, data.worldPos.y, 0);
+        const root = this.carryRoot ?? this._getCarryStack()?.carryRoot;
+        const dest = root ? root.worldPosition : new Vec3(data.worldPos.x, data.worldPos.y, 0);
         flyResourceTo(best.node, dest, undefined, undefined, () => {
             if (best && best.isValid) {
                 const idx = this._groundResources.indexOf(best);
@@ -396,27 +442,27 @@ export class ResourceEconomySystem extends Component {
                 }
                 best.node.destroy();
             }
-            this.playerCarry?.add(type, 1);
+            this._getCarryStack()?.add(type, 1);
             EventBus.emit(GameEvent.RESOURCE_PICKED, { type, requesterId: 'player' });
         });
     }
 
     private _flyToPlayer(type: ResourceType, from: Vec3, onDone?: () => void): void {
         const prefab = this._prefabFor(type);
-        const carryRoot = this.playerCarry?.carryRoot;
-        if (!prefab || !carryRoot) {
-            this.playerCarry?.add(type, 1);
+        const root = this.carryRoot ?? this._getCarryStack()?.carryRoot;
+        if (!prefab || !root) {
+            this._getCarryStack()?.add(type, 1);
             onDone?.();
             return;
         }
         const n = instantiate(prefab);
         n.parent = this.dropRoot ?? this.node;
         n.setWorldPosition(from);
-        flyResourceTo(n, carryRoot.worldPosition, undefined, undefined, () => {
+        flyResourceTo(n, root.worldPosition, undefined, undefined, () => {
             if (n.isValid) {
                 n.destroy();
             }
-            this.playerCarry?.add(type, 1);
+            this._getCarryStack()?.add(type, 1);
             EventBus.emit(GameEvent.RESOURCE_PICKED, { type, requesterId: 'player' });
             onDone?.();
         });
@@ -429,7 +475,7 @@ export class ResourceEconomySystem extends Component {
             case ResourceType.CookedMeat:
                 return this.cookedMeatPrefab ?? this.rawMeatPrefab;
             case ResourceType.Coin:
-                return this.coinPrefab ?? this.playerCarry?.coinPrefab ?? null;
+                return this.coinPrefab ?? this._getCarryStack()?.coinPrefab ?? null;
             default:
                 return this.rawMeatPrefab;
         }
@@ -512,11 +558,11 @@ export class ResourceEconomySystem extends Component {
      */
     public playerDeliverToStall(stallId: string): void {
         const stall = this.getStall(stallId);
-        if (!stall || !this.playerCarry) {
+        if (!stall || !this._getCarryStack()) {
             return;
         }
         if (stall.stallType === StallType.CookedMeat) {
-            const taken = this.playerCarry.remove(ResourceType.RawMeat, 1);
+            const taken = this._getCarryStack().remove(ResourceType.RawMeat, 1);
             if (taken > 0) {
                 if (!stall.tradeVisualPrefab) {
                     stall.tradeVisualPrefab = this.cookedMeatPrefab ?? this.rawMeatPrefab;
@@ -525,7 +571,9 @@ export class ResourceEconomySystem extends Component {
                     stall.rawVisualPrefab = this.rawMeatPrefab;
                 }
                 stall.receiveResource(
-                    this.playerCarry.carryRoot?.worldPosition ?? this.playerCarry.node.worldPosition,
+                    this.carryRoot?.worldPosition ??
+                        this._getCarryStack()?.carryRoot?.worldPosition ??
+                        this._getCarryStack()!.node.worldPosition,
                     this.rawMeatPrefab,
                     taken,
                 );
@@ -533,16 +581,17 @@ export class ResourceEconomySystem extends Component {
             return;
         }
         const type = stall.tradeResourceType;
-        if (this.playerCarry.getCount(type) <= 0) {
+        if (this._getCarryStack().getCount(type) <= 0) {
             return;
         }
-        const taken = this.playerCarry.remove(type, 1);
+        const taken = this._getCarryStack().remove(type, 1);
         if (taken <= 0) {
             return;
         }
         const from =
-            this.playerCarry.carryRoot?.worldPosition.clone() ??
-            this.playerCarry.node.worldPosition.clone();
+            this.carryRoot?.worldPosition.clone() ??
+            this._getCarryStack().carryRoot?.worldPosition.clone() ??
+            this._getCarryStack().node.worldPosition.clone();
         const prefab = this._prefabFor(type) ?? stall.tradeVisualPrefab;
         if (!stall.tradeVisualPrefab && prefab) {
             stall.tradeVisualPrefab = prefab;

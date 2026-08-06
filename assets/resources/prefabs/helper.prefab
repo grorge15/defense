@@ -24,14 +24,17 @@
         "__id__": 2
       },
       {
-        "__id__": 4
+        "__id__": 6
       },
       {
-        "__id__": 6
+        "__id__": 8
+      },
+      {
+        "__id__": 4
       }
     ],
     "_prefab": {
-      "__id__": 8
+      "__id__": 10
     },
     "_lpos": {
       "__type__": "cc.Vec3",
@@ -79,11 +82,47 @@
     "deposit": null,
     "moveSpeed": 70,
     "stallStandPoint": null,
+    "anim": {
+      "__id__": 4
+    },
     "_id": ""
   },
   {
     "__type__": "cc.CompPrefabInfo",
     "fileId": "d1gINTW11CYJetc2nN9Yjq"
+  },
+  {
+    "__type__": "cc.Animation",
+    "_name": "",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "node": {
+      "__id__": 1
+    },
+    "_enabled": true,
+    "__prefab": {
+      "__id__": 5
+    },
+    "playOnLoad": true,
+    "_clips": [
+      {
+        "__uuid__": "5e726147-6421-4331-a2c0-e71f79420e46",
+        "__expectedType__": "cc.AnimationClip"
+      },
+      {
+        "__uuid__": "aef0ed85-eee1-4a5f-b2d4-ca23c85cb735",
+        "__expectedType__": "cc.AnimationClip"
+      }
+    ],
+    "_defaultClip": {
+      "__uuid__": "5e726147-6421-4331-a2c0-e71f79420e46",
+      "__expectedType__": "cc.AnimationClip"
+    },
+    "_id": ""
+  },
+  {
+    "__type__": "cc.CompPrefabInfo",
+    "fileId": "helperAnimPF01"
   },
   {
     "__type__": "cc.UITransform",
@@ -95,12 +134,12 @@
     },
     "_enabled": true,
     "__prefab": {
-      "__id__": 5
+      "__id__": 7
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 58,
-      "height": 75
+      "width": 52.1,
+      "height": 81.2
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -123,7 +162,7 @@
     },
     "_enabled": true,
     "__prefab": {
-      "__id__": 7
+      "__id__": 9
     },
     "_customMaterial": null,
     "_srcBlendFactor": 2,
@@ -136,12 +175,12 @@
       "a": 255
     },
     "_spriteFrame": {
-      "__uuid__": "f7ef3f99-80af-4411-b75e-28d4bfb7655b@f9941",
+      "__uuid__": "507e93c7-3f2d-4ba3-b104-1e154ba05c42@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
     "_type": 0,
     "_fillType": 0,
-    "_sizeMode": 1,
+    "_sizeMode": 0,
     "_fillCenter": {
       "__type__": "cc.Vec2",
       "x": 0,

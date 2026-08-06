@@ -1,5 +1,6 @@
 import { _decorator, Component, Collider2D, Contact2DType } from 'cc';
 import { TreeEntity } from './TreeEntity';
+import { PlayerController } from '../player/PlayerController';
 
 const { ccclass, property } = _decorator;
 
@@ -14,6 +15,7 @@ export class TreeChopTrigger extends Component {
 
     private _playerIn: boolean = false;
     private _timer: number = 0;
+    private _player: PlayerController | null = null;
 
     protected onLoad(): void {
         if (!this.tree) {
@@ -41,20 +43,33 @@ export class TreeChopTrigger extends Component {
         this._timer += dt;
         if (this._timer >= this.chopInterval) {
             this._timer = 0;
+            this._player?.playChop();
             this.tree.chop('player');
         }
     }
 
     private _onEnter(_s: Collider2D, other: Collider2D): void {
-        if (other.node.getComponent('PlayerController') || other.node.name.indexOf('Player') >= 0) {
+        const pc =
+            other.node.getComponent(PlayerController) ??
+            other.node.parent?.getComponent(PlayerController) ??
+            null;
+        if (pc || other.node.name.indexOf('Player') >= 0) {
             this._playerIn = true;
+            this._player = pc;
         }
     }
 
     private _onExit(_s: Collider2D, other: Collider2D): void {
-        if (other.node.getComponent('PlayerController') || other.node.name.indexOf('Player') >= 0) {
+        const pc =
+            other.node.getComponent(PlayerController) ??
+            other.node.parent?.getComponent(PlayerController) ??
+            null;
+        if (pc || other.node.name.indexOf('Player') >= 0) {
             this._playerIn = false;
             this._timer = 0;
+            if (pc && this._player === pc) {
+                this._player = null;
+            }
         }
     }
 }

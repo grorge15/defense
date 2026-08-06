@@ -1,6 +1,7 @@
-import { _decorator, Component, Node, Vec3 } from 'cc';
+import { _decorator, Component, Node, Vec3, Animation } from 'cc';
 import { HelperTask, NpcWorkState, ResourceType, StallType } from '../core/Enums';
 import { EventBus, GameEvent } from '../core/GameEvent';
+import { playAnimClip } from '../core/AnimPlay';
 import { Stall } from '../economy/Stall';
 import { DepositPoint } from '../economy/DepositPoint';
 
@@ -27,6 +28,9 @@ export class HelperNpc extends Component {
     @property({ tooltip: '摊位交互站位点' })
     public stallStandPoint: Node | null = null;
 
+    @property({ type: Animation, tooltip: 'idle / walk 序列帧' })
+    public anim: Animation | null = null;
+
     private _state: NpcWorkState = NpcWorkState.Idle;
     private _task: HelperTask = HelperTask.Idle;
     private _carrying: number = 0;
@@ -35,6 +39,7 @@ export class HelperNpc extends Component {
     private _activeDeposit: DepositPoint | null = null;
     /** 已发出上交请求，等飞行落地（期间不离开交互区去取货） */
     private _awaitingDeliver: boolean = false;
+    private _walking: boolean = false;
 
     public get carrying(): number {
         return this._carrying;
@@ -69,13 +74,31 @@ export class HelperNpc extends Component {
 
     protected update(dt: number): void {
         if (this._targetPos) {
+            this._setWalking(true);
             if (this._moveToward(this._targetPos, dt)) {
                 this._targetPos = null;
+                this._setWalking(false);
                 this._onArrive();
             }
             return;
         }
+        this._setWalking(false);
         this._think();
+    }
+
+    private _setWalking(walking: boolean): void {
+        if (this._walking === walking) {
+            return;
+        }
+        this._walking = walking;
+        this._playBodyClip(walking ? 'walk' : 'idle');
+    }
+
+    private _playBodyClip(kind: 'idle' | 'walk'): void {
+        if (!this.anim) {
+            this.anim = this.getComponent(Animation) ?? this.getComponentInChildren(Animation);
+        }
+        playAnimClip(this.anim, kind);
     }
 
     private _activateStallHelper(): void {

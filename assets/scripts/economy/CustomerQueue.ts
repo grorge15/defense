@@ -135,6 +135,7 @@ export class CustomerQueue extends Component {
             const c = this._customers[i];
             const target = this._posForIndex(i);
             const start = c.node.position.clone();
+            c.setWalking(true);
             let t = 0;
             const dur = 0.35;
             const tick = (dt: number) => {
@@ -146,6 +147,7 @@ export class CustomerQueue extends Component {
                     0,
                 );
                 if (k >= 1) {
+                    c.setWalking(false);
                     this.unschedule(tick);
                 }
             };
