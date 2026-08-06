@@ -95,6 +95,10 @@ export class PurchaseTrigger extends Component {
         return this._purchased;
     }
 
+    public get unlocked(): boolean {
+        return this._unlocked;
+    }
+
     public get remainingPrice(): number {
         return this._remaining;
     }

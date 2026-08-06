@@ -33,7 +33,10 @@ export class GameConstants {
         [ShopItemType.ExpandTower]: 200,
     };
 
-    // —— 引导阈值 ——
+    // —— 引导箭头 ——
+    public static readonly GUIDE_WIRE_SPACING = 38;
+    public static readonly GUIDE_WIRE_START_PAD = 36;
+    public static readonly GUIDE_WIRE_END_PAD = 36;
     public static readonly GUIDE_HELPER_COIN_THRESHOLD = 60;
 
     // —— 顾客（预留可调） ——
