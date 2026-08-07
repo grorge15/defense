@@ -1,124 +1,106 @@
-import {
-    _decorator,
-    Component,
-    Color,
-    Graphics,
-    Node,
-    UITransform,
-} from 'cc';
+import { _decorator, Component, Sprite } from 'cc';
 import { Hero } from '../combat/Hero';
 import { SortingOrder2D } from '../core/SortingOrder2D';
 
 const { ccclass, property } = _decorator;
 
 /**
- * 英雄技能 CD：头顶 360° 绿色圆形填充。
- * 进度 0→1 蓄满后技能释放，Hero 计时归零后再从 0 循环。
+ * 英雄技能 CD：驱动 prefab 上已有的 `cd` 径向 Fill Sprite。
+ * progress 0→1 蓄满后释放，Hero 计时归零后再从 0 循环。
  */
 @ccclass('HeroCdUI')
 export class HeroCdUI extends Component {
     @property({ type: Hero, tooltip: '绑定英雄（空则从父节点取）' })
     public hero: Hero | null = null;
 
-    @property({ tooltip: '相对英雄的头顶偏移' })
-    public offsetY: number = 55;
+    @property({ type: Sprite, tooltip: 'CD 填充 Sprite（空则取本节点 / cd 子节点）' })
+    public cdSprite: Sprite | null = null;
 
-    @property({ tooltip: 'CD 环半径' })
-    public radius: number = 14;
-
-    @property({ tooltip: '填充颜色' })
-    public fillColor: Color = new Color(80, 220, 90, 230);
-
-    @property({ tooltip: '底圈颜色' })
-    public bgColor: Color = new Color(30, 30, 30, 140);
-
-    private _g: Graphics | null = null;
     private _lastProgress: number = -1;
 
-    /** 挂到英雄身上并自动搭好环 */
+    /** 挂到英雄 prefab 的 cd 节点并驱动 fillRange */
     public static attachTo(hero: Hero): HeroCdUI {
-        let uiNode = hero.node.getChildByName('CdUI');
-        if (!uiNode) {
-            uiNode = new Node('CdUI');
-            uiNode.layer = hero.node.layer;
-            uiNode.parent = hero.node;
+        const cdNode =
+            hero.node.getChildByName('cd') ??
+            hero.node.getChildByName('Cd') ??
+            hero.node.getChildByName('CdUI');
+        if (!cdNode) {
+            console.warn('[HeroCdUI] 英雄缺少 cd 节点', hero.node.name);
+            let ui = hero.getComponent(HeroCdUI);
+            if (!ui) {
+                ui = hero.addComponent(HeroCdUI);
+            }
+            ui.hero = hero;
+            ui._bindSprite();
+            return ui;
         }
-        let ui = uiNode.getComponent(HeroCdUI);
+
+        let ui = cdNode.getComponent(HeroCdUI);
         if (!ui) {
-            ui = uiNode.addComponent(HeroCdUI);
+            ui = cdNode.addComponent(HeroCdUI);
         }
         ui.hero = hero;
-        ui._ensureVisual();
+        ui._bindSprite();
         return ui;
     }
 
     protected onLoad(): void {
         if (!this.hero) {
-            this.hero = this.node.parent?.getComponent(Hero) ?? this.node.getComponentInParent(Hero);
+            this.hero =
+                this.node.parent?.getComponent(Hero) ??
+                this.getComponentInParent(Hero) ??
+                null;
         }
-        this._ensureVisual();
+        this._bindSprite();
     }
 
     protected lateUpdate(): void {
         if (!this.hero || !this.hero.isValid) {
             return;
         }
-        this.node.setPosition(0, this.offsetY, 0);
-        const progress = this.hero.skillCdProgress;
-        if (Math.abs(progress - this._lastProgress) >= 0.002) {
-            this._lastProgress = progress;
-            this._redraw(progress);
+        if (!this.cdSprite) {
+            this._bindSprite();
         }
+        const spr = this.cdSprite;
+        if (!spr) {
+            return;
+        }
+        const progress = this.hero.skillCdProgress;
+        if (Math.abs(progress - this._lastProgress) < 0.002) {
+            return;
+        }
+        this._lastProgress = progress;
+        spr.fillRange = Math.max(0, Math.min(1, progress));
         this.node.getComponent(SortingOrder2D)?.applyOrder();
     }
 
-    private _ensureVisual(): void {
-        const size = this.radius * 2 + 4;
-        let ui = this.node.getComponent(UITransform);
-        if (!ui) {
-            ui = this.node.addComponent(UITransform);
+    private _bindSprite(): void {
+        if (this.cdSprite?.isValid) {
+            this._ensureFilled(this.cdSprite);
+            return;
         }
-        ui.setContentSize(size, size);
-
-        this._g = this.node.getComponent(Graphics);
-        if (!this._g) {
-            this._g = this.node.addComponent(Graphics);
+        let spr = this.node.getComponent(Sprite);
+        if (!spr) {
+            const cd =
+                this.node.getChildByName('cd') ??
+                this.node.getChildByName('Cd') ??
+                this.node.getChildByName('CdUI');
+            spr = cd?.getComponent(Sprite) ?? null;
         }
-
-        if (!this.node.getComponent(SortingOrder2D)) {
-            const sort = this.node.addComponent(SortingOrder2D);
-            sort.orderOffset = 2;
+        this.cdSprite = spr;
+        if (spr) {
+            this._ensureFilled(spr);
+            this._lastProgress = -1;
+            spr.fillRange = Math.max(0, Math.min(1, this.hero?.skillCdProgress ?? 0));
         }
-
-        this.node.setPosition(0, this.offsetY, 0);
-        this._lastProgress = -1;
-        this._redraw(this.hero?.skillCdProgress ?? 0);
     }
 
-    private _redraw(progress: number): void {
-        const g = this._g;
-        if (!g) {
-            return;
+    private _ensureFilled(spr: Sprite): void {
+        if (spr.type !== Sprite.Type.FILLED) {
+            spr.type = Sprite.Type.FILLED;
         }
-        const r = this.radius;
-        const p = Math.max(0, Math.min(1, progress));
-        g.clear();
-
-        g.fillColor = this.bgColor;
-        g.circle(0, 0, r);
-        g.fill();
-
-        if (p <= 0.001) {
-            return;
+        if (spr.fillType !== Sprite.FillType.RADIAL) {
+            spr.fillType = Sprite.FillType.RADIAL;
         }
-
-        // 从正上方开始顺时针填充（屏幕坐标 y 向上）
-        const start = Math.PI * 0.5;
-        const end = start - p * Math.PI * 2;
-        g.fillColor = this.fillColor;
-        g.moveTo(0, 0);
-        g.arc(0, 0, r, start, end, true);
-        g.close();
-        g.fill();
     }
 }

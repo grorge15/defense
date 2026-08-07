@@ -65,6 +65,8 @@ export class Enemy extends Component {
         this._rb.fixedRotation = true;
         this._rb.allowSleep = false;
         this._rb.enabledContactListener = true;
+        // 减少高速穿墙
+        this._rb.bullet = true;
 
         const col = this.getComponent(Collider2D);
         if (col instanceof BoxCollider2D) {

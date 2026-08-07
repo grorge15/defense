@@ -78,6 +78,7 @@ export class CustomerQueue extends Component {
             this._spawnAtIndex(i);
         }
         this._refreshHeadUI();
+        this._refreshDepthOrder();
     }
 
     private _spawnAtIndex(index: number): Customer | null {
@@ -98,6 +99,23 @@ export class CustomerQueue extends Component {
     /** 第 0 位在原点，之后每位在上一位右上角 */
     private _posForIndex(index: number): Vec3 {
         return new Vec3(this.spacingX * index, this.spacingY * index, 0);
+    }
+
+    /**
+     * Y 越高越靠后：兄弟节点顺序 + SortingOrder2D 同步，避免后排盖住队首。
+     */
+    private _refreshDepthOrder(): void {
+        if (!this.queueRoot) {
+            return;
+        }
+        const sorted = this._customers
+            .filter((c) => c?.isValid)
+            .slice()
+            .sort((a, b) => b.node.worldPosition.y - a.node.worldPosition.y);
+        for (let i = 0; i < sorted.length; i++) {
+            sorted[i].node.setSiblingIndex(i);
+            sorted[i].refreshSorting();
+        }
     }
 
     private _refreshHeadUI(): void {
@@ -149,6 +167,7 @@ export class CustomerQueue extends Component {
                 if (k >= 1) {
                     c.setWalking(false);
                     this.unschedule(tick);
+                    this._refreshDepthOrder();
                 }
             };
             this.schedule(tick);
@@ -158,6 +177,7 @@ export class CustomerQueue extends Component {
                 this._spawnAtIndex(this._customers.length);
             }
             this._refreshHeadUI();
+            this._refreshDepthOrder();
         }, 0.4);
     }
 }

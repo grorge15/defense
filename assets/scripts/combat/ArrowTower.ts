@@ -27,6 +27,9 @@ export class ArrowTower extends Component {
     @property({ type: Node, tooltip: '登塔触发区' })
     public mountTrigger: Node | null = null;
 
+    @property({ type: Node, tooltip: '上塔地贴 / 下塔落点（建造前隐藏）' })
+    public groundPoint: Node | null = null;
+
     @property({
         type: Node,
         tooltip: '英雄站立点（默认子节点 StandPoint）',
@@ -86,12 +89,7 @@ export class ArrowTower extends Component {
 
     protected onLoad(): void {
         this._autoBind();
-        if (this.visual) {
-            this.visual.active = this._built;
-        }
-        if (this.mountTrigger) {
-            this.mountTrigger.active = this._built;
-        }
+        this._applyBuiltNodes(this._built);
         if (this.heroPurchaseUI) {
             this.heroPurchaseUI.active = false;
             this._heroPurchaseTrigger()?.setUnlocked(false);
@@ -117,6 +115,9 @@ export class ArrowTower extends Component {
         }
         if (!this.mountTrigger) {
             this.mountTrigger = this.node.getChildByName('MountTrigger');
+        }
+        if (!this.groundPoint) {
+            this.groundPoint = this.node.getChildByName('GroundPoint');
         }
         if (!this.heroStandPoint) {
             this.heroStandPoint =
@@ -154,6 +155,19 @@ export class ArrowTower extends Component {
         }
         if (!this.meatDepositId) {
             this.meatDepositId = `${this.towerId}_meat_deposit`;
+        }
+    }
+
+    /** 箭塔建成后才显示：Visual / GroundPoint / MountTrigger */
+    private _applyBuiltNodes(built: boolean): void {
+        if (this.visual) {
+            this.visual.active = built;
+        }
+        if (this.groundPoint) {
+            this.groundPoint.active = built;
+        }
+        if (this.mountTrigger) {
+            this.mountTrigger.active = built;
         }
     }
 
@@ -197,12 +211,7 @@ export class ArrowTower extends Component {
             return;
         }
         this._built = true;
-        if (this.visual) {
-            this.visual.active = true;
-        }
-        if (this.mountTrigger) {
-            this.mountTrigger.active = true;
-        }
+        this._applyBuiltNodes(true);
         if (this.buildTrigger) {
             this.buildTrigger.node.active = false;
         }
@@ -220,12 +229,7 @@ export class ArrowTower extends Component {
             return;
         }
         this._built = true;
-        if (this.visual) {
-            this.visual.active = true;
-        }
-        if (this.mountTrigger) {
-            this.mountTrigger.active = true;
-        }
+        this._applyBuiltNodes(true);
         if (this.buildTrigger) {
             this.buildTrigger.node.active = false;
         }

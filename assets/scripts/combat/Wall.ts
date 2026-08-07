@@ -6,13 +6,14 @@ const { ccclass, property } = _decorator;
 
 /**
  * 城墙血量管理；归零无失败惩罚，仅血条表现。受击闪白。
+ * 满血隐藏血条，掉血后常态显示。
  */
 @ccclass('Wall')
 export class Wall extends Component {
     @property({ tooltip: '最大血量' })
     public maxHp: number = GameConstants.WALL_MAX_HP;
 
-    @property({ type: Node, tooltip: '血条背景节点' })
+    @property({ type: Node, tooltip: '血条根/背景（空则用 hpFill 或子节点「血条1」）' })
     public hpBg: Node | null = null;
 
     @property({ type: Node, tooltip: '血条绿条节点（左锚点，水平 scaleX 填充）' })
@@ -29,8 +30,25 @@ export class Wall extends Component {
 
     protected onLoad(): void {
         this._hp = this.maxHp;
+        this._autoBindHpBar();
         this._ensureHpFillAnchor();
         this._refreshHpBar();
+    }
+
+    private _autoBindHpBar(): void {
+        if (!this.hpFill) {
+            const bar =
+                this.node.getChildByName('血条1') ??
+                this.node.getChildByName('HpBar') ??
+                this.node.getChildByName('hpBar');
+            if (bar) {
+                this.hpFill = bar;
+            }
+        }
+        if (!this.hpBg && this.hpFill) {
+            // 无独立背景时，整条显示/隐藏用 fill 所在节点
+            this.hpBg = this.hpFill;
+        }
     }
 
     /** 血条从左向右填充，需左锚点 */
@@ -52,12 +70,22 @@ export class Wall extends Component {
     }
 
     private _refreshHpBar(): void {
+        const full = this._hp >= this.maxHp;
+        this._setHpBarVisible(!full);
+
         if (!this.hpFill) {
             return;
         }
         const ratio = this.maxHp > 0 ? this._hp / this.maxHp : 0;
         const s = this.hpFill.scale;
         this.hpFill.setScale(ratio, s.y, s.z);
+    }
+
+    private _setHpBarVisible(visible: boolean): void {
+        const root = this.hpBg ?? this.hpFill;
+        if (root?.isValid) {
+            root.active = visible;
+        }
     }
 
     private _flashWhite(): void {

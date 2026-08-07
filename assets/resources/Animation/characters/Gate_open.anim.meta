@@ -2,12 +2,12 @@
   "ver": "2.0.4",
   "importer": "animation-clip",
   "imported": true,
-  "uuid": "26899a06-af10-4cd9-ad83-ad6cda78ce07",
+  "uuid": "b7e21f4a-6c38-4d9e-9a12-8f3e5c7d1b90",
   "files": [
     ".bin"
   ],
   "subMetas": {},
   "userData": {
-    "name": "Player_rangeAttack"
+    "name": "Gate_open"
   }
 }

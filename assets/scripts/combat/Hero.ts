@@ -29,8 +29,8 @@ type SkillLocalArea = {
 };
 
 /**
- * 英雄：普攻发射光波打近怪；CD 满后范围技能（冰柱/风暴地面、雷电/火箭从天而降）。
- * 大招落点在 skillPos 本地矩形内布点再转世界坐标（兼容 UISkew 视觉菱形）。
+ * 英雄：普攻发射光波打近怪；CD 满后扇形范围技能（行内齐射、逐行加宽）。
+ * 大招落点在 skillPos 本地扇形内布点再转世界坐标（兼容 UISkew 视觉菱形）。
  */
 @ccclass('Hero')
 export class Hero extends Component {
@@ -55,16 +55,22 @@ export class Hero extends Component {
     @property({ tooltip: '大招 CD' })
     public skillCd: number = GameConstants.HERO_SKILL_CD;
 
-    @property({ tooltip: '技能矩形行数' })
+    @property({ tooltip: '扇形行数' })
     public skillRows: number = GameConstants.HERO_SKILL_ROW_COUNT;
 
-    @property({ tooltip: '技能矩形列数' })
+    @property({ tooltip: '扇形首行 effect 数量（之后每行 +1）' })
     public skillCols: number = GameConstants.HERO_SKILL_COL_COUNT;
 
-    @property({ tooltip: '技能格子间距' })
+    @property({ tooltip: '同行相邻 effect 间距' })
     public skillSpacing: number = GameConstants.HERO_SKILL_CELL_SPACING;
 
-    @property({ tooltip: '技能起始延迟（起手后多久开始刷第一个 effect）' })
+    @property({ tooltip: '扇形相邻行间距（沿扇形朝向）' })
+    public skillRowSpacing: number = GameConstants.HERO_SKILL_ROW_SPACING;
+
+    @property({ tooltip: '扇形朝向：true=指向 skillPos 内最近敌人；false=指向区域中心' })
+    public fanTowardNearestEnemy: boolean = true;
+
+    @property({ tooltip: '技能起始延迟（起手后多久开始刷第一行）' })
     public skillStartDelay: number = GameConstants.HERO_SKILL_START_DELAY;
 
     @property({ tooltip: '大招总时长（秒）：含起手延迟，结束后恢复普攻；多 effect 会均分错开' })
@@ -170,23 +176,25 @@ export class Hero extends Component {
         }
         await this._wait(this.skillStartDelay);
 
-        // 在 skillPos 本地矩形布点，再转世界坐标（自动吃进 UISkew，落在视觉菱形内）
+        // 扇形：首行 5 个齐射，逐行 +1，行与行之间错开
         const area = this._getSkillLocalArea();
-        const cells = area ? this._buildSkillCellsLocal(area) : this._buildSkillCellsWorldFallback();
+        const rowGroups = area ? this._buildFanRowsLocal(area) : this._buildFanRowsWorldFallback();
         const isSky = this.heroType === HeroType.Lightning || this.heroType === HeroType.Rocket;
 
-        const n = cells.length;
+        const rowCount = rowGroups.length;
         const budget = Math.max(
             0,
             this.skillTotalDuration - this.skillStartDelay - this.skillEndPadding,
         );
-        const stagger = n > 1 ? budget / (n - 1) : 0;
+        const rowStagger = rowCount > 1 ? budget / (rowCount - 1) : 0;
 
-        for (let i = 0; i < n; i++) {
-            if (i > 0 && stagger > 0) {
-                await this._wait(stagger);
+        for (let r = 0; r < rowCount; r++) {
+            if (r > 0 && rowStagger > 0) {
+                await this._wait(rowStagger);
             }
-            this._spawnSkillFx(cells[i], isSky);
+            for (const cell of rowGroups[r]) {
+                this._spawnSkillFx(cell, isSky);
+            }
         }
 
         await this._wait(this.skillEndPadding);
@@ -196,59 +204,124 @@ export class Hero extends Component {
     }
 
     /**
-     * 在 skillPos 本地坐标系铺格子，再 convertToWorldSpaceAR。
-     * 避免 getBoundingBoxToWorld + UISkew 造成的「逻辑 AABB ≠ 视觉菱形」错位。
+     * 扇形布点：第 r 行有 (skillCols + r) 个 effect，行内齐射。
+     * 起点 = skillPos 离英雄最近的边；朝向 = 最近敌人或区域中心。
      */
-    private _buildSkillCellsLocal(area: SkillLocalArea): Vec3[] {
-        const origin = this._pickSkillOriginLocal(area);
-        const cells: Vec3[] = [];
+    private _buildFanRowsLocal(area: SkillLocalArea): Vec3[][] {
+        const axes = this._resolveFanAxesLocal(area);
+        return this._buildFanRowsFromAxes(
+            area,
+            axes.originX,
+            axes.originY,
+            axes.forwardX,
+            axes.forwardY,
+            axes.rightX,
+            axes.rightY,
+            (lx, ly) => {
+                const wx = this._clamp(lx, area.minX, area.maxX);
+                const wy = this._clamp(ly, area.minY, area.maxY);
+                const world = area.ui.convertToWorldSpaceAR(new Vec3(wx, wy, 0));
+                return new Vec3(world.x, world.y, 0);
+            },
+        );
+    }
+
+    private _resolveFanAxesLocal(area: SkillLocalArea): {
+        originX: number;
+        originY: number;
+        forwardX: number;
+        forwardY: number;
+        rightX: number;
+        rightY: number;
+    } {
+        const heroL = area.ui.convertToNodeSpaceAR(this.node.worldPosition);
+        const origin = this._nearestEdgeAnchor(area, heroL);
+        const cx = (area.minX + area.maxX) * 0.5;
+        const cy = (area.minY + area.maxY) * 0.5;
+
+        let fx = cx - origin.x;
+        let fy = cy - origin.y;
+        if (this.fanTowardNearestEnemy && this.spawner) {
+            const near = this._findNearestInSkillLocal(area, this.node.worldPosition, 400);
+            if (near) {
+                const el = area.ui.convertToNodeSpaceAR(near.node.worldPosition);
+                fx = el.x - origin.x;
+                fy = el.y - origin.y;
+            }
+        }
+        let len = Math.hypot(fx, fy);
+        if (len < 1e-3) {
+            fx = 0;
+            fy = 1;
+            len = 1;
+        }
+        fx /= len;
+        fy /= len;
+        return {
+            originX: origin.x,
+            originY: origin.y,
+            forwardX: fx,
+            forwardY: fy,
+            rightX: -fy,
+            rightY: fx,
+        };
+    }
+
+    /** skillPos 内离参考点最近的那条边上的锚点 */
+    private _nearestEdgeAnchor(area: SkillLocalArea, ref: Vec3): Vec3 {
+        const dLeft = Math.abs(ref.x - area.minX);
+        const dRight = Math.abs(ref.x - area.maxX);
+        const dBottom = Math.abs(ref.y - area.minY);
+        const dTop = Math.abs(ref.y - area.maxY);
+        const minD = Math.min(dLeft, dRight, dBottom, dTop);
+        if (minD === dLeft) {
+            return new Vec3(area.minX, this._clamp(ref.y, area.minY, area.maxY), 0);
+        }
+        if (minD === dRight) {
+            return new Vec3(area.maxX, this._clamp(ref.y, area.minY, area.maxY), 0);
+        }
+        if (minD === dBottom) {
+            return new Vec3(this._clamp(ref.x, area.minX, area.maxX), area.minY, 0);
+        }
+        return new Vec3(this._clamp(ref.x, area.minX, area.maxX), area.maxY, 0);
+    }
+
+    private _buildFanRowsFromAxes(
+        _area: SkillLocalArea | null,
+        originX: number,
+        originY: number,
+        forwardX: number,
+        forwardY: number,
+        rightX: number,
+        rightY: number,
+        toWorld: (lx: number, ly: number) => Vec3,
+    ): Vec3[][] {
+        const rows: Vec3[][] = [];
         const seen = new Set<string>();
+        const rowStep = Math.max(8, this.skillRowSpacing);
+
         for (let r = 0; r < this.skillRows; r++) {
-            for (let c = 0; c < this.skillCols; c++) {
-                const lx = this._clamp(
-                    origin.x + c * this.skillSpacing,
-                    area.minX,
-                    area.maxX,
-                );
-                const ly = this._clamp(
-                    origin.y + r * this.skillSpacing,
-                    area.minY,
-                    area.maxY,
-                );
+            const count = this.skillCols + r;
+            const row: Vec3[] = [];
+            const cx = originX + forwardX * r * rowStep;
+            const cy = originY + forwardY * r * rowStep;
+
+            for (let i = 0; i < count; i++) {
+                const t = i - (count - 1) * 0.5;
+                const lx = cx + rightX * t * this.skillSpacing;
+                const ly = cy + rightY * t * this.skillSpacing;
                 const key = `${Math.round(lx)}_${Math.round(ly)}`;
                 if (seen.has(key)) {
                     continue;
                 }
                 seen.add(key);
-                const world = area.ui.convertToWorldSpaceAR(new Vec3(lx, ly, 0));
-                cells.push(new Vec3(world.x, world.y, 0));
+                row.push(toWorld(lx, ly));
+            }
+            if (row.length > 0) {
+                rows.push(row);
             }
         }
-        return cells;
-    }
-
-    private _pickSkillOriginLocal(area: SkillLocalArea): Vec3 {
-        const center = new Vec3(
-            (area.minX + area.maxX) * 0.5,
-            (area.minY + area.maxY) * 0.5,
-            0,
-        );
-        let origin = center.clone();
-        if (this.spawner) {
-            const near = this._findNearestInSkillLocal(area, this.node.worldPosition, 400);
-            if (near) {
-                origin = area.ui.convertToNodeSpaceAR(near.node.worldPosition);
-            }
-        }
-
-        const gridW = Math.max(0, (this.skillCols - 1) * this.skillSpacing);
-        const gridH = Math.max(0, (this.skillRows - 1) * this.skillSpacing);
-        const maxX = area.maxX - Math.min(gridW, area.maxX - area.minX);
-        const maxY = area.maxY - Math.min(gridH, area.maxY - area.minY);
-        origin.x = this._clamp(origin.x, area.minX, Math.max(area.minX, maxX));
-        origin.y = this._clamp(origin.y, area.minY, Math.max(area.minY, maxY));
-        origin.z = 0;
-        return origin;
+        return rows;
     }
 
     private _findNearestInSkillLocal(
@@ -287,29 +360,45 @@ export class Hero extends Component {
         return best;
     }
 
-    /** 无 skillPos 时退回旧的世界坐标铺点 */
-    private _buildSkillCellsWorldFallback(): Vec3[] {
+    /** 无 skillPos 时：以英雄附近为扇形起点，朝最近敌人展开 */
+    private _buildFanRowsWorldFallback(): Vec3[][] {
         const from = this.node.worldPosition;
-        let origin = new Vec3(from.x + 80, from.y, 0);
+        let originX = from.x + 40;
+        let originY = from.y;
+        let fx = 1;
+        let fy = 0;
         if (this.spawner) {
             const near = this.spawner.findNearest(from, 400);
             if (near) {
-                origin = near.node.worldPosition.clone();
+                const tp = near.node.worldPosition;
+                fx = tp.x - originX;
+                fy = tp.y - originY;
             }
         }
-        const cells: Vec3[] = [];
-        for (let r = 0; r < this.skillRows; r++) {
-            for (let c = 0; c < this.skillCols; c++) {
-                cells.push(
-                    new Vec3(
-                        origin.x + c * this.skillSpacing,
-                        origin.y + r * this.skillSpacing,
-                        0,
-                    ),
-                );
-            }
+        if (!this.fanTowardNearestEnemy) {
+            fx = 80;
+            fy = 0;
         }
-        return cells;
+        let len = Math.hypot(fx, fy);
+        if (len < 1e-3) {
+            fx = 1;
+            fy = 0;
+            len = 1;
+        }
+        fx /= len;
+        fy /= len;
+        const rightX = -fy;
+        const rightY = fx;
+        return this._buildFanRowsFromAxes(
+            null,
+            originX,
+            originY,
+            fx,
+            fy,
+            rightX,
+            rightY,
+            (lx, ly) => new Vec3(lx, ly, 0),
+        );
     }
 
     private _ensureSkillBounds(): void {

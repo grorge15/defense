@@ -1,7 +1,8 @@
 import { _decorator, Component, Node, Prefab, instantiate, Vec3 } from 'cc';
 import { PlayerState, HeroType } from '../core/Enums';
-import { EventBus, GameEvent, PlayerStatePayload, CreateHeroPayload } from '../core/GameEvent';
+import { EventBus, GameEvent, PlayerStatePayload, CreateHeroPayload, PlayerActionFinishedPayload } from '../core/GameEvent';
 import { GameConstants } from '../core/GameConstants';
+import { Enemy } from './Enemy';
 import { EnemySpawner } from './EnemySpawner';
 import { Hero } from './Hero';
 import { ArrowTower } from './ArrowTower';
@@ -45,13 +46,18 @@ export class DefenseCombatSystem extends Component {
     @property({ tooltip: '地面近战冷却' })
     public meleeCooldown: number = GameConstants.PLAYER_MELEE_COOLDOWN;
 
+    @property({ tooltip: '地面近战圆形伤害半径' })
+    public meleeRadius: number = GameConstants.PLAYER_MELEE_RANGE;
+
     @property({ tooltip: '箭命中固定时间' })
     public arrowHitDelay: number = GameConstants.PLAYER_ARROW_HIT_DELAY;
 
     private _playerState: PlayerState = PlayerState.Ground;
     private _playerPos: Vec3 = new Vec3();
     private _meleeTimer: number = 0;
+    private _meleeBusy: boolean = false;
     private _towerFiring: boolean = false;
+    private _pendingRangeTarget: Enemy | null = null;
     private _towersBuilt: number = 0;
 
     protected onLoad(): void {
@@ -61,6 +67,9 @@ export class DefenseCombatSystem extends Component {
         EventBus.on(GameEvent.CMD_BUILD_TOWER, this._onBuildTower, this);
         EventBus.on(GameEvent.REQUEST_MOUNT_TOWER, this._onMountTower, this);
         EventBus.on(GameEvent.REQUEST_DISMOUNT_TOWER, this._onDismountTower, this);
+        EventBus.on(GameEvent.PLAYER_RANGE_HIT, this._onPlayerRangeHit, this);
+        EventBus.on(GameEvent.PLAYER_MELEE_HIT, this._onPlayerMeleeHit, this);
+        EventBus.on(GameEvent.PLAYER_ACTION_FINISHED, this._onPlayerActionFinished, this);
     }
 
     protected start(): void {
@@ -83,6 +92,9 @@ export class DefenseCombatSystem extends Component {
         EventBus.off(GameEvent.CMD_BUILD_TOWER, this._onBuildTower, this);
         EventBus.off(GameEvent.REQUEST_MOUNT_TOWER, this._onMountTower, this);
         EventBus.off(GameEvent.REQUEST_DISMOUNT_TOWER, this._onDismountTower, this);
+        EventBus.off(GameEvent.PLAYER_RANGE_HIT, this._onPlayerRangeHit, this);
+        EventBus.off(GameEvent.PLAYER_MELEE_HIT, this._onPlayerMeleeHit, this);
+        EventBus.off(GameEvent.PLAYER_ACTION_FINISHED, this._onPlayerActionFinished, this);
     }
 
     protected update(dt: number): void {
@@ -108,39 +120,64 @@ export class DefenseCombatSystem extends Component {
     private _onPlayerState(data: PlayerStatePayload): void {
         this._playerState = data.state;
         this._playerPos.set(data.worldPos.x, data.worldPos.y, 0);
+        if (data.state !== PlayerState.OnTower) {
+            this._pendingRangeTarget = null;
+            this._towerFiring = false;
+        }
+        if (data.state !== PlayerState.Ground) {
+            this._meleeBusy = false;
+        }
+    }
+
+    private _onPlayerActionFinished(data: PlayerActionFinishedPayload): void {
+        // 资源名对调：rangeAttack clip=近战视觉，meleeAttack clip=射箭视觉
+        if (data.clip === 'meleeAttack') {
+            this._towerFiring = false;
+            this._pendingRangeTarget = null;
+        }
+        if (data.clip === 'rangeAttack') {
+            this._meleeBusy = false;
+        }
     }
 
     private _tryMelee(): void {
-        if (!this.spawner || !this.player) {
+        if (!this.spawner || !this.player || this._meleeBusy || this.player.isActionBusy) {
             return;
         }
-        const range = this.player.meleeRange;
-        const targets = this.spawner.findInRadius(this._playerPos, range);
+        const targets = this.spawner.findInRadius(this._playerPos, this.meleeRadius);
         if (targets.length === 0) {
             return;
         }
         this._meleeTimer = this.meleeCooldown;
-        // 先结算击杀，再播动画，避免缺 clip / play 异常导致打不出伤害
-        let nearest = targets[0];
-        let best = Number.MAX_VALUE;
-        for (const t of targets) {
-            const p = t.node.worldPosition;
-            const d = (p.x - this._playerPos.x) ** 2 + (p.y - this._playerPos.y) ** 2;
-            if (d < best) {
-                best = d;
-                nearest = t;
-            }
-        }
-        nearest.kill(false);
+        this._meleeBusy = true;
         try {
             this.player.playMeleeAttack();
         } catch (e) {
+            this._meleeBusy = false;
             console.warn('[DefenseCombat] playMeleeAttack failed', e);
         }
     }
 
+    /** 近战 clip 帧事件：圆形范围内所有敌人 */
+    private _onPlayerMeleeHit(): void {
+        if (!this.spawner) {
+            return;
+        }
+        const targets = this.spawner.findInRadius(this._playerPos, this.meleeRadius);
+        for (const t of targets) {
+            if (t.alive) {
+                t.kill(false);
+            }
+        }
+    }
+
     private _tryTowerShot(): void {
-        if (this._towerFiring || !this.spawner || !this.arrowPrefab) {
+        if (
+            this._towerFiring ||
+            !this.spawner ||
+            !this.player ||
+            this.player.isActionBusy
+        ) {
             return;
         }
         const target = this.spawner.findNearest(this._playerPos);
@@ -148,18 +185,33 @@ export class DefenseCombatSystem extends Component {
             return;
         }
         this._towerFiring = true;
+        this._pendingRangeTarget = target;
         this.player.playRangeAttack();
+    }
+
+    /** 射箭 clip 帧事件（onMeleeHit）：生成箭矢，命中时再结算伤害 */
+    private _onPlayerRangeHit(): void {
+        const target = this._pendingRangeTarget;
+        this._pendingRangeTarget = null;
+        if (!target?.isValid) {
+            return;
+        }
+        if (!this.arrowPrefab) {
+            if (target.alive) {
+                target.kill(false);
+            }
+            return;
+        }
         const arrow = instantiate(this.arrowPrefab);
         arrow.parent = this.node;
         arrow.setWorldPosition(this._playerPos.x, this._playerPos.y, 0);
         const dest = target.node.worldPosition.clone();
-        const delay = this.arrowHitDelay;
-        const proj = arrow.getComponent(ProjectileMovement) ?? arrow.addComponent(ProjectileMovement);
-        proj.launchTo(dest, delay, () => {
-            if (target.alive) {
+        const proj =
+            arrow.getComponent(ProjectileMovement) ?? arrow.addComponent(ProjectileMovement);
+        proj.launchTo(dest, this.arrowHitDelay, () => {
+            if (target.isValid && target.alive) {
                 target.kill(false);
             }
-            this._towerFiring = false;
         });
     }
 

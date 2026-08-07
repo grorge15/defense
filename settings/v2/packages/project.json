@@ -5,5 +5,43 @@
       "width": 720,
       "height": 1280
     }
-  }
+  },
+  "layer": [
+    {
+      "name": "enemy",
+      "value": 1
+    },
+    {
+      "name": "Player",
+      "value": 2
+    }
+  ],
+  "physics": {
+    "collisionGroups": [
+      {
+        "index": 1,
+        "name": "Player"
+      },
+      {
+        "index": 2,
+        "name": "enemy"
+      },
+      {
+        "index": 3,
+        "name": "gate"
+      },
+      {
+        "index": 4,
+        "name": "wall"
+      }
+    ],
+    "collisionMatrix": {
+      "0": 31,
+      "1": 25,
+      "2": 29,
+      "3": 23,
+      "4": 15
+    }
+  },
+  "custom_joint_texture_layouts": []
 }

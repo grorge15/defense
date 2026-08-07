@@ -17,8 +17,9 @@ const { ccclass, property } = _decorator;
 
 /**
  * 箭塔登/下塔：
- * - 无英雄时，玩家踩到 GroundPoint → 上到 StandPoint 射箭
- * - 塔上再推摇杆 → 落回 GroundPoint
+ * - GroundPoint 仅作落点标记，不带刚体/碰撞
+ * - 传感器在 MountTrigger 上，运行时对齐 GroundPoint 位置
+ * - 无英雄时踩传感器 → StandPoint 射箭
  */
 @ccclass('TowerMountTrigger')
 export class TowerMountTrigger extends Component {
@@ -28,26 +29,24 @@ export class TowerMountTrigger extends Component {
     @property({ type: Node, tooltip: '玩家登上后站立点 StandPoint' })
     public standPoint: Node | null = null;
 
-    @property({ type: Node, tooltip: '上塔触发 / 下塔落地点 GroundPoint' })
+    @property({ type: Node, tooltip: '上塔触发参考 / 下塔落地点 GroundPoint（无物理）' })
     public groundPoint: Node | null = null;
 
-    private _groundCol: Collider2D | null = null;
+    @property({ tooltip: '传感器尺寸（MountTrigger BoxCollider2D）' })
+    public sensorSize: number = 60;
+
+    private _sensorCol: Collider2D | null = null;
 
     protected onLoad(): void {
         this._autoBind();
-        this._setupGroundSensor();
-        // MountTrigger 本体若带碰撞且不是 GroundPoint，关掉以免路过误上塔
-        if (this.node !== this.groundPoint) {
-            const selfCol = this.getComponent(Collider2D);
-            if (selfCol) {
-                selfCol.enabled = false;
-            }
-        }
+        this._stripGroundPointPhysics();
+        this._syncTriggerToGround();
+        this._setupMountSensor();
     }
 
     protected onDestroy(): void {
-        if (this._groundCol) {
-            this._groundCol.off(Contact2DType.BEGIN_CONTACT, this._onGroundEnter, this);
+        if (this._sensorCol) {
+            this._sensorCol.off(Contact2DType.BEGIN_CONTACT, this._onGroundEnter, this);
         }
     }
 
@@ -63,38 +62,62 @@ export class TowerMountTrigger extends Component {
         if (!this.groundPoint && this.towerRoot) {
             this.groundPoint = this.towerRoot.getChildByName('GroundPoint');
         }
-        if (!this.groundPoint) {
-            this.groundPoint = this.node;
+    }
+
+    /** GroundPoint 只做标记，移除运行时误挂的刚体/碰撞 */
+    private _stripGroundPointPhysics(): void {
+        const gp = this.groundPoint;
+        if (!gp || gp === this.node) {
+            return;
+        }
+        const rb = gp.getComponent(RigidBody2D);
+        if (rb) {
+            rb.destroy();
+        }
+        const col = gp.getComponent(Collider2D);
+        if (col) {
+            col.destroy();
         }
     }
 
-    private _setupGroundSensor(): void {
-        const gp = this.groundPoint;
-        if (!gp) {
+    /** MountTrigger 传感器对齐到 GroundPoint 世界位置 */
+    private _syncTriggerToGround(): void {
+        if (!this.groundPoint || this.groundPoint === this.node) {
             return;
         }
-        let rb = gp.getComponent(RigidBody2D);
+        const wp = this.groundPoint.worldPosition;
+        this.node.setWorldPosition(wp.x, wp.y, wp.z);
+    }
+
+    /** 传感器挂在 MountTrigger 本节点，不给 GroundPoint 加刚体 */
+    private _setupMountSensor(): void {
+        let rb = this.node.getComponent(RigidBody2D);
         if (!rb) {
-            rb = gp.addComponent(RigidBody2D);
-            rb.type = ERigidBody2DType.Kinematic;
-            rb.gravityScale = 0;
-            rb.allowSleep = false;
+            rb = this.node.addComponent(RigidBody2D);
         }
-        let col = gp.getComponent(BoxCollider2D);
+        rb.type = ERigidBody2DType.Kinematic;
+        rb.gravityScale = 0;
+        rb.allowSleep = false;
+        rb.enabledContactListener = true;
+
+        let col = this.node.getComponent(BoxCollider2D);
         if (!col) {
-            col = gp.addComponent(BoxCollider2D);
-            col.size = new Size(60, 60);
+            col = this.node.addComponent(BoxCollider2D);
         }
+        const s = Math.max(20, this.sensorSize);
+        col.size = new Size(s, s);
         col.sensor = true;
         col.enabled = true;
-        this._groundCol = col;
+
+        if (this._sensorCol && this._sensorCol !== col) {
+            this._sensorCol.off(Contact2DType.BEGIN_CONTACT, this._onGroundEnter, this);
+        }
+        this._sensorCol = col;
         col.on(Contact2DType.BEGIN_CONTACT, this._onGroundEnter, this);
     }
 
     private _onGroundEnter(_self: Collider2D, other: Collider2D): void {
-        const player =
-            other.getComponent(PlayerController) ??
-            other.node.getComponent(PlayerController);
+        const player = this._findPlayer(other);
         if (!player || !player.canMountTower) {
             return;
         }
@@ -105,9 +128,25 @@ export class TowerMountTrigger extends Component {
         if (tower?.hasHero) {
             return;
         }
+        if (!this.standPoint) {
+            console.warn('[TowerMountTrigger] StandPoint 未绑定', this.node.name);
+            return;
+        }
         EventBus.emit(GameEvent.REQUEST_MOUNT_TOWER, {
-            towerNode: this.towerRoot ?? this.node,
+            towerNode: this.towerRoot ?? this.node.parent ?? this.node,
         });
+    }
+
+    private _findPlayer(col: Collider2D): PlayerController | null {
+        let n: Node | null = col.node;
+        for (let i = 0; i < 4 && n; i++) {
+            const p = n.getComponent(PlayerController);
+            if (p) {
+                return p;
+            }
+            n = n.parent;
+        }
+        return null;
     }
 
     private _resolveTower(): ArrowTower | null {

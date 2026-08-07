@@ -53,14 +53,17 @@ export class GameConstants {
     public static readonly PLAYER_ARROW_HIT_DELAY = 0.12;
     public static readonly HERO_NORMAL_ATTACK_INTERVAL = 1.0;
     public static readonly HERO_SKILL_CD = 8;
-    public static readonly HERO_SKILL_ROW_COUNT = 3;
-    public static readonly HERO_SKILL_COL_COUNT = 4;
-    public static readonly HERO_SKILL_CELL_SPACING = 60;
+    public static readonly HERO_SKILL_ROW_COUNT = 12;
+    /** 扇形首行 effect 数量；第 n 行 = 本值 + (n-1) */
+    public static readonly HERO_SKILL_COL_COUNT = 6;
+    public static readonly HERO_SKILL_CELL_SPACING = 42;
+    /** 扇形相邻行间距（沿扇形朝向） */
+    public static readonly HERO_SKILL_ROW_SPACING = 38;
     public static readonly HERO_SKILL_START_DELAY = 0.15;
     /** 大招从起手到英雄恢复普攻的总时长（秒） */
     public static readonly HERO_SKILL_TOTAL_DURATION = 3.5;
     /** 单个 effect 范围秒杀半径 */
-    public static readonly HERO_SKILL_HIT_RADIUS = 72;
+    public static readonly HERO_SKILL_HIT_RADIUS = 110;
     /** 落雷/火箭下落时长 */
     public static readonly HERO_SKILL_SKY_FALL = 0.15;
     /** 最后一个 effect 生成后再等一会再恢复普攻（给命中/特效留时间） */

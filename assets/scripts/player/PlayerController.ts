@@ -16,7 +16,8 @@ import {
 import { PlayerState, ResourceType } from '../core/Enums';
 import { EventBus, GameEvent, PlayerStatePayload } from '../core/GameEvent';
 import { GameConstants } from '../core/GameConstants';
-import { playAnimClip } from '../core/AnimPlay';
+import { playAnimClip, resolveAnimState } from '../core/AnimPlay';
+import { SortingOrder2D } from '../core/SortingOrder2D';
 import { VirtualJoystick } from './VirtualJoystick';
 import { PlayerCarryStack } from './PlayerCarryStack';
 import { ResourceEntity } from '../economy/ResourceEntity';
@@ -54,6 +55,9 @@ export class PlayerController extends Component {
     @property({ tooltip: '跳上箭塔时长（秒）' })
     public jumpToTowerDuration: number = 0.28;
 
+    @property({ tooltip: '在塔上时 SortingOrder2D.orderOffset 额外增加值' })
+    public towerSortOffset: number = 100;
+
     private _rb: RigidBody2D | null = null;
     private _state: PlayerState = PlayerState.Ground;
     private _towerMount: Node | null = null;
@@ -66,6 +70,8 @@ export class PlayerController extends Component {
     private _jumping: boolean = false;
     /** true = 朝左（Y=180）；默认朝右 */
     private _facingLeft: boolean = false;
+    private _towerSortBoosted: boolean = false;
+    private _savedSortOffsets = new Map<SortingOrder2D, number>();
 
     public get state(): PlayerState {
         return this._state;
@@ -82,6 +88,11 @@ export class PlayerController extends Component {
             !this._jumping &&
             Date.now() >= this._mountLockUntil
         );
+    }
+
+    /** 是否正在播放攻击/砍树/死亡等动作 clip */
+    public get isActionBusy(): boolean {
+        return this._action !== null;
     }
 
     protected onLoad(): void {
@@ -200,14 +211,24 @@ export class PlayerController extends Component {
         this._playClip(kind);
     }
 
-    /** 地面近战 */
+    /** 地面近战（资源 clip 名为 rangeAttack / Player_rangeAttack） */
     public playMeleeAttack(): void {
+        this._playAction('rangeAttack');
+    }
+
+    /** 箭塔远程射箭（资源 clip 名为 meleeAttack） */
+    public playRangeAttack(): void {
         this._playAction('meleeAttack');
     }
 
-    /** 箭塔远程射箭 */
-    public playRangeAttack(): void {
-        this._playAction('rangeAttack');
+    /** 近战 clip 帧事件（资源名 rangeAttack）→ 圆形范围伤害 */
+    public onRangeHit(): void {
+        EventBus.emit(GameEvent.PLAYER_MELEE_HIT);
+    }
+
+    /** 射箭 clip 帧事件（资源名 meleeAttack）→ 远程伤害结算 */
+    public onMeleeHit(): void {
+        EventBus.emit(GameEvent.PLAYER_RANGE_HIT);
     }
 
     /** 砍树 */
@@ -221,6 +242,15 @@ export class PlayerController extends Component {
     }
 
     private _playAction(kind: ActionClip, hold = false): void {
+        if (this._action === kind) {
+            if (!this.anim) {
+                this.anim = this.getComponent(Animation) ?? this.getComponentInChildren(Animation);
+            }
+            const playing = resolveAnimState(this.anim, kind);
+            if (playing?.isPlaying) {
+                return;
+            }
+        }
         this._action = kind;
         const state = (() => {
             if (!this.anim) {
@@ -238,9 +268,13 @@ export class PlayerController extends Component {
     }
 
     private _clearAction = (): void => {
+        const ended = this._action;
         this._action = null;
         this._loco = 'idle';
         this._playClip(this._state === PlayerState.OnTower ? 'idle' : this._loco);
+        if (ended) {
+            EventBus.emit(GameEvent.PLAYER_ACTION_FINISHED, { clip: ended });
+        }
     };
 
     private _playClip(name: string): void {
@@ -279,6 +313,7 @@ export class PlayerController extends Component {
         }
         this._jumpTo(standPos, () => {
             this._state = PlayerState.OnTower;
+            this._setTowerSortBoost(true);
             this._syncStateEvent();
         });
     }
@@ -289,6 +324,7 @@ export class PlayerController extends Component {
         this._mountLockUntil = Date.now() + 800;
         this._jumpTo(groundPos, () => {
             this._state = PlayerState.Ground;
+            this._setTowerSortBoost(false);
             if (this._rb) {
                 this._rb.enabled = true;
                 this._rb.linearVelocity = Vec2.ZERO;
@@ -350,6 +386,41 @@ export class PlayerController extends Component {
                 onDone();
             })
             .start();
+    }
+
+    /** 上塔 +offset，下塔还原 SortingOrder2D.orderOffset */
+    private _setTowerSortBoost(on: boolean): void {
+        if (on === this._towerSortBoosted) {
+            return;
+        }
+        const boost = this.towerSortOffset;
+        const sorts = this.node.getComponentsInChildren(SortingOrder2D);
+        if (on) {
+            for (const s of sorts) {
+                if (!s?.isValid) {
+                    continue;
+                }
+                if (!this._savedSortOffsets.has(s)) {
+                    this._savedSortOffsets.set(s, s.orderOffset);
+                }
+                s.orderOffset += boost;
+                s.applyOrder();
+            }
+            this._towerSortBoosted = true;
+            return;
+        }
+        for (const s of sorts) {
+            if (!s?.isValid) {
+                continue;
+            }
+            const base = this._savedSortOffsets.get(s);
+            if (base !== undefined) {
+                s.orderOffset = base;
+                s.applyOrder();
+            }
+        }
+        this._savedSortOffsets.clear();
+        this._towerSortBoosted = false;
     }
 
     public requestPickup(resourceType: ResourceType, depositId?: string): void {

@@ -1,13 +1,22 @@
-import { _decorator, Component, Animation, Collider2D, Node } from 'cc';
+import {
+    _decorator,
+    Component,
+    Animation,
+    Collider2D,
+    Contact2DType,
+    IPhysics2DContact,
+    RigidBody2D,
+} from 'cc';
 import { EventBus, GameEvent, PlayerStatePayload } from '../core/GameEvent';
 import { GameConstants } from '../core/GameConstants';
-import { Wall } from './Wall';
+import { PlayerController } from '../player/PlayerController';
+import { playAnimClip } from '../core/AnimPlay';
 
 const { ccclass, property } = _decorator;
 
 /**
  * 城门：靠近开门、离开关门。
- * 开门时关闭门道刚体阻挡（含门自身与邻近城墙碰撞），保证玩家用 RigidBody 可通行。
+ * 碰撞体始终开启（继续挡住 enemy）；开门时仅对玩家忽略碰撞，避免敌人跟着进城。
  */
 @ccclass('Gate')
 export class Gate extends Component {
@@ -16,9 +25,6 @@ export class Gate extends Component {
 
     @property({ tooltip: '关门距离（应大于开门距离）' })
     public closeDistance: number = GameConstants.GATE_OPEN_DISTANCE + 40;
-
-    @property({ tooltip: '开门时额外放开周围城墙碰撞的半径' })
-    public clearWallRadius: number = 90;
 
     @property({ type: Animation, tooltip: '门动画组件（可空）' })
     public anim: Animation | null = null;
@@ -29,7 +35,7 @@ export class Gate extends Component {
     @property({ tooltip: '关门动画名' })
     public closeAnim: string = 'close';
 
-    @property({ type: [Collider2D], tooltip: '门道阻挡碰撞列表（可空，运行时自动收集）' })
+    @property({ type: [Collider2D], tooltip: '门道阻挡碰撞（空则用本节点 Collider2D）' })
     public doorBlockers: Collider2D[] = [];
 
     private _open: boolean = false;
@@ -40,14 +46,26 @@ export class Gate extends Component {
         if (!this.anim) {
             this.anim = this.getComponent(Animation) ?? this.getComponentInChildren(Animation);
         }
+        const rb = this.getComponent(RigidBody2D);
+        if (rb) {
+            rb.enabledContactListener = true;
+        }
         this._collectBlockers();
-        // 初始关门：阻挡开启
-        this._setBlockersEnabled(true);
+        for (const c of this._blockers) {
+            c.sensor = false;
+            c.enabled = true;
+            c.on(Contact2DType.BEGIN_CONTACT, this._onBeginContact, this);
+        }
         EventBus.on(GameEvent.PLAYER_STATE_CHANGED, this._onPlayer, this);
     }
 
     protected onDestroy(): void {
         EventBus.off(GameEvent.PLAYER_STATE_CHANGED, this._onPlayer, this);
+        for (const c of this._blockers) {
+            if (c?.isValid) {
+                c.off(Contact2DType.BEGIN_CONTACT, this._onBeginContact, this);
+            }
+        }
     }
 
     protected update(): void {
@@ -66,15 +84,7 @@ export class Gate extends Component {
             return;
         }
         this._open = shouldOpen;
-        // 开门：关闭阻挡；关门：恢复阻挡
-        this._setBlockersEnabled(!shouldOpen);
-        if (!this.anim) {
-            return;
-        }
-        const name = shouldOpen ? this.openAnim : this.closeAnim;
-        if (this.anim.getState(name) || this.anim.clips.length > 0) {
-            this.anim.play(name);
-        }
+        playAnimClip(this.anim, shouldOpen ? this.openAnim : this.closeAnim, { restart: true });
     }
 
     private _collectBlockers(): void {
@@ -85,39 +95,37 @@ export class Gate extends Component {
                     this._blockers.push(c);
                 }
             }
-        } else {
-            const selfCols = this.getComponents(Collider2D);
-            for (const c of selfCols) {
-                c.sensor = false;
-                this._blockers.push(c);
-            }
-            // 邻近城墙碰撞一并纳入门道通行控制
-            const walls = this.node.scene?.getComponentsInChildren(Wall) ?? [];
-            const gp = this.node.worldPosition;
-            const r2 = this.clearWallRadius * this.clearWallRadius;
-            for (const wall of walls) {
-                const wp = wall.node.worldPosition;
-                const ddx = wp.x - gp.x;
-                const ddy = wp.y - gp.y;
-                if (ddx * ddx + ddy * ddy > r2) {
-                    continue;
-                }
-                const cols = wall.getComponents(Collider2D);
-                for (const c of cols) {
-                    if (c && !c.sensor) {
-                        this._blockers.push(c);
-                    }
-                }
-            }
+            return;
+        }
+        const selfCols = this.getComponents(Collider2D);
+        for (const c of selfCols) {
+            this._blockers.push(c);
         }
     }
 
-    private _setBlockersEnabled(enabled: boolean): void {
-        for (const c of this._blockers) {
-            if (c && c.isValid) {
-                c.enabled = enabled;
-            }
+    /**
+     * 开门时：与玩家的接触忽略物理阻挡；敌人仍被挡住。
+     */
+    private _onBeginContact(
+        _self: Collider2D,
+        other: Collider2D,
+        contact: IPhysics2DContact | null,
+    ): void {
+        if (!this._open || !contact) {
+            return;
         }
+        if (this._isPlayerCollider(other)) {
+            contact.disabled = true;
+        }
+    }
+
+    private _isPlayerCollider(col: Collider2D): boolean {
+        const n = col.node;
+        return !!(
+            n.getComponent(PlayerController) ||
+            n.getComponentInChildren(PlayerController) ||
+            n.parent?.getComponent(PlayerController)
+        );
     }
 
     private _onPlayer(data: PlayerStatePayload): void {

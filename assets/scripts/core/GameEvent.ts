@@ -13,6 +13,12 @@ export const GameEvent = {
     REQUEST_PLAYER_DELIVER_STALL: 'request-player-deliver-stall',
     REQUEST_MOUNT_TOWER: 'request-mount-tower',
     REQUEST_DISMOUNT_TOWER: 'request-dismount-tower',
+    /** 玩家 rangeAttack 动画帧事件 → 防守系统结算远程伤害 */
+    PLAYER_RANGE_HIT: 'player-range-hit',
+    /** 玩家近战 clip 帧事件 → 圆形范围伤害 */
+    PLAYER_MELEE_HIT: 'player-melee-hit',
+    /** 玩家动作 clip 播完（idle/run 恢复前） */
+    PLAYER_ACTION_FINISHED: 'player-action-finished',
 
     // 防守战斗系统 → 外
     ENEMY_DIED: 'enemy-died',
@@ -98,6 +104,11 @@ export interface CoinChangedPayload {
 export interface PlayerStatePayload {
     state: PlayerState;
     worldPos: { x: number; y: number; z: number };
+}
+
+export interface PlayerActionFinishedPayload {
+    /** 与 _playAction 传入的逻辑 clip 名一致 */
+    clip: string;
 }
 
 export interface TreeChoppedPayload {

@@ -20,6 +20,7 @@ import {
 } from 'cc';
 import { ResourceType } from '../core/Enums';
 import { GameConstants } from '../core/GameConstants';
+import { SortingOrder2D } from '../core/SortingOrder2D';
 
 const { ccclass, property } = _decorator;
 
@@ -88,6 +89,9 @@ export class Customer extends Component {
         if (this.itemIcon) {
             this._itemBaseScale = this.itemIcon.scale.clone();
         }
+        // 默认朝左；气泡反向翻一次，避免文字/图标镜像
+        this.setFacingLeft(true);
+        this._ensureSorting();
     }
 
     public setupRandomDemand(type: ResourceType): void {
@@ -102,11 +106,43 @@ export class Customer extends Component {
         if (this.checkIcon) {
             this.checkIcon.active = false;
         }
+        this.setFacingLeft(true);
+        this._ensureSorting();
         this._applyDemandIcon();
         this._refreshUI(false);
         this.setShowDemand(false);
         this._walking = false;
         this._playBodyClip('idle');
+    }
+
+    /** 朝左=true → scale.x 取负；气泡再翻一次，避免文字/图标镜像 */
+    public setFacingLeft(left: boolean): void {
+        const s = this.node.scale;
+        const absX = Math.abs(s.x) || 1;
+        this.node.setScale(left ? -absX : absX, s.y, s.z);
+        const bubble =
+            this.bubbleRoot ??
+            this.node.getChildByName('bubble') ??
+            this.node.getChildByName('DemandBubble');
+        if (bubble) {
+            const bs = bubble.scale;
+            const bAbs = Math.abs(bs.x) || 1;
+            // 根节点朝左时气泡再翻一次，图标/数字仍正向
+            bubble.setScale(left ? -bAbs : bAbs, bs.y, bs.z);
+        }
+    }
+
+    /** 刷新 -worldY 层级（队内遮挡） */
+    public refreshSorting(): void {
+        this._ensureSorting();
+        const sort =
+            this.getComponent(SortingOrder2D) ?? this.getComponentInChildren(SortingOrder2D);
+        sort?.applyOrder();
+    }
+
+    private _ensureSorting(): void {
+        // 只加 SortingOrder2D，不碰 UIRenderer（Sprite 已带）
+        SortingOrder2D.ensure(this.node, 2);
     }
 
     /** 切换 idle / walk（clip 名 Customer_{variant}_idle|walk） */
@@ -235,6 +271,8 @@ export class Customer extends Component {
     }
 
     public leave(direction: Vec3, onDone: () => void): void {
+        // 离场方向决定朝向（向右离场则朝右）
+        this.setFacingLeft(direction.x < 0);
         this.setWalking(true);
         const start = this.node.worldPosition.clone();
         const end = new Vec3(start.x + direction.x, start.y + direction.y, 0);

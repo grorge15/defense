@@ -356,8 +356,7 @@ export class GuidePathArrow extends Component {
 
     private _ensureSort(n: Node): void {
         if (!n.getComponent(SortingOrder2D) && !n.getComponentInChildren(SortingOrder2D)) {
-            const s = n.addComponent(SortingOrder2D);
-            s.orderOffset = 50;
+            SortingOrder2D.ensure(n, 50);
         }
     }
 
