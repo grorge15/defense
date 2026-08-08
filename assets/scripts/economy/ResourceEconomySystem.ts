@@ -289,7 +289,7 @@ export class ResourceEconomySystem extends Component {
     private _resolveWoodDeposit(near: Vec3): DepositPoint | null {
         let best: DepositPoint | null = null;
         let bestD = Number.POSITIVE_INFINITY;
-        for (const dep of this.deposits) {
+        for (const dep of this._allDeposits()) {
             if (dep.resourceType !== ResourceType.Wood) {
                 continue;
             }
@@ -335,45 +335,90 @@ export class ResourceEconomySystem extends Component {
         }
         // 优先拾取指定放置点
         if (data.depositId) {
-            const dep = this.getDeposit(data.depositId);
+            const dep = this.getDeposit(data.depositId) ?? this._findDepositById(data.depositId);
             if (dep && dep.stock > 0 && this._getCarryStack()) {
-                if (dep.resourceType === ResourceType.Coin) {
-                    this._pickupCoinFromDeposit(dep, data);
-                } else {
-                    const take = dep.takeStock(1);
-                    if (take > 0) {
-                        const from = new Vec3(data.worldPos.x, data.worldPos.y, 0);
-                        this._flyToPlayer(dep.resourceType, from);
-                    }
-                }
+                this._takeFromDeposit(dep, data);
             }
             return;
         }
-        // 靠近金币地块：按结算数值拾取进钱包 + 背负表现
-        if (this._tryPickupNearbyCoinDeposit(data)) {
+        // 靠近任意有货 Deposit（金币进钱包，肉/木进背负）
+        if (this._tryPickupNearbyDeposit(data)) {
             return;
         }
         // 拾取地面最近资源
         this._pickupNearestGround(data);
     }
 
-    /** 靠近金币放置点则拾取 1 枚（每帧请求可连续吸完） */
-    private _tryPickupNearbyCoinDeposit(data: PickupRequestPayload): boolean {
+    /** 扫描场景全部 Deposit（含运行时克隆的英雄储肉点） */
+    private _allDeposits(): DepositPoint[] {
+        const sceneDeps = this.node.scene?.getComponentsInChildren(DepositPoint, true) ?? [];
+        if (sceneDeps.length === 0) {
+            return this.deposits.filter((d) => d?.isValid);
+        }
+        const seen = new Set<DepositPoint>();
+        const list: DepositPoint[] = [];
+        for (const d of this.deposits) {
+            if (d?.isValid && !seen.has(d)) {
+                seen.add(d);
+                list.push(d);
+            }
+        }
+        for (const d of sceneDeps) {
+            if (d?.isValid && !seen.has(d)) {
+                seen.add(d);
+                list.push(d);
+            }
+        }
+        return list;
+    }
+
+    private _findDepositById(id: string): DepositPoint | null {
+        return this._allDeposits().find((d) => d.depositId === id) ?? null;
+    }
+
+    /** 靠近任意匹配类型的 Deposit 则拾取 1 份 */
+    private _tryPickupNearbyDeposit(data: PickupRequestPayload): boolean {
         const range = GameConstants.PICKUP_RANGE + 20;
         const r2 = range * range;
-        for (const dep of this.deposits) {
-            if (dep.resourceType !== ResourceType.Coin || dep.stock <= 0) {
+        let best: DepositPoint | null = null;
+        let bestD = r2;
+        for (const dep of this._allDeposits()) {
+            if (!dep.node.activeInHierarchy || dep.stock <= 0) {
+                continue;
+            }
+            if (dep.resourceType !== data.resourceType) {
                 continue;
             }
             const dp = dep.node.worldPosition;
             const dx = dp.x - data.worldPos.x;
             const dy = dp.y - data.worldPos.y;
-            if (dx * dx + dy * dy > r2) {
+            const d = dx * dx + dy * dy;
+            if (d > bestD) {
                 continue;
             }
+            bestD = d;
+            best = dep;
+        }
+        if (!best) {
+            return false;
+        }
+        return this._takeFromDeposit(best, data);
+    }
+
+    private _takeFromDeposit(dep: DepositPoint, data: PickupRequestPayload): boolean {
+        if (dep.resourceType === ResourceType.Coin) {
             return this._pickupCoinFromDeposit(dep, data);
         }
-        return false;
+        if (!this._getCarryStack()) {
+            return false;
+        }
+        const take = dep.takeStock(1);
+        if (take <= 0) {
+            return false;
+        }
+        const from = new Vec3(dep.node.worldPosition.x, dep.node.worldPosition.y, 0);
+        this._flyToPlayer(dep.resourceType, from);
+        return true;
     }
 
     private _pickupCoinFromDeposit(dep: DepositPoint, data: PickupRequestPayload): boolean {

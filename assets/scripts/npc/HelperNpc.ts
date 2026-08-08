@@ -1,5 +1,5 @@
 import { _decorator, Component, Node, Vec3, Animation } from 'cc';
-import { HelperTask, NpcWorkState, ResourceType, StallType } from '../core/Enums';
+import { HelperTask, NpcWorkState, ResourceType } from '../core/Enums';
 import { EventBus, GameEvent } from '../core/GameEvent';
 import { playAnimClip } from '../core/AnimPlay';
 import { Stall } from '../economy/Stall';
@@ -9,7 +9,7 @@ const { ccclass, property } = _decorator;
 
 /**
  * 帮手：PlaceRoot 有货或正在上架/烤制时 → 站 InteractZone 售卖；
- * 仅当 PlaceRoot 耗尽且无在途上架时，才去储肉地取货运回。
+ * PlaceRoot 耗尽后，仅去本摊位 boundDeposit 取货（Deposit 未开放则不取）。
  */
 @ccclass('HelperNpc')
 export class HelperNpc extends Component {
@@ -129,7 +129,7 @@ export class HelperNpc extends Component {
             this._goIdleAtStall();
             return;
         }
-        // PlaceRoot 耗尽：去有货放置点取货（生肉 / 木头）
+        // PlaceRoot 耗尽：仅去本摊位绑定的 Deposit 取货；未开放则不取
         const pickupDep = this._resolvePickupDeposit();
         if (pickupDep && pickupDep.stock > 0) {
             this._task = HelperTask.PickupDeposit;
@@ -141,59 +141,32 @@ export class HelperNpc extends Component {
         this._goIdleAtStall();
     }
 
+    /**
+     * 只认本摊位 boundDeposit（与 Helper.deposit 对齐）。
+     * Deposit 未开放（inactive）或无货 → 不发起取货。
+     */
     private _resolvePickupDeposit(): DepositPoint | null {
-        if (this.stall?.stallType === StallType.Wood) {
-            return this._resolveWoodDeposit();
+        const dep = this._boundDeposit();
+        if (!dep) {
+            return null;
         }
-        return this._resolveMeatDeposit();
+        if (!dep.node.activeInHierarchy) {
+            return null;
+        }
+        if (dep.stock <= 0) {
+            return null;
+        }
+        return dep;
     }
 
-    private _resolveWoodDeposit(): DepositPoint | null {
-        if (this.deposit?.resourceType === ResourceType.Wood && this.deposit.stock > 0) {
-            return this.deposit;
+    private _boundDeposit(): DepositPoint | null {
+        const stallDep = this.stall?.boundDeposit ?? null;
+        if (stallDep?.isValid) {
+            // 以摊位绑定为准，保持 helper.deposit 同步
+            this.deposit = stallDep;
+            return stallDep;
         }
-        if (
-            this.stall?.boundDeposit?.resourceType === ResourceType.Wood &&
-            this.stall.boundDeposit.stock > 0
-        ) {
-            return this.stall.boundDeposit;
-        }
-        const stallId = this.stall?.stallId ?? '';
-        const deps = this.node.scene?.getComponentsInChildren(DepositPoint, true) ?? [];
-        return (
-            deps.find(
-                (d) =>
-                    d.resourceType === ResourceType.Wood &&
-                    d.stock > 0 &&
-                    (d.boundStallId === stallId || d === this.deposit),
-            ) ?? null
-        );
-    }
-
-    private _resolveMeatDeposit(): DepositPoint | null {
-        if (this.deposit && this.deposit.stock > 0) {
-            return this.deposit;
-        }
-        const stallId = this.stall?.stallId ?? '';
-        const deps = this.node.scene?.getComponentsInChildren(DepositPoint, true) ?? [];
-        const acceptRawForCook =
-            this.stall?.stallType === StallType.CookedMeat || stallId === 'stall_cooked';
-        const bound = deps.filter((d) => {
-            if (d.resourceType !== ResourceType.RawMeat || d.stock <= 0) {
-                return false;
-            }
-            if (d === this.stall?.boundDeposit || d === this.deposit) {
-                return true;
-            }
-            if (d.boundStallId === stallId) {
-                return true;
-            }
-            if (acceptRawForCook && (d.boundStallId === 'stall_raw' || !d.boundStallId)) {
-                return true;
-            }
-            return false;
-        });
-        return bound[0] ?? null;
+        return this.deposit?.isValid ? this.deposit : null;
     }
 
     private _goIdleAtStall(): void {
@@ -214,9 +187,9 @@ export class HelperNpc extends Component {
 
     private _onArrive(): void {
         if (this._task === HelperTask.PickupDeposit) {
-            const dep = this._activeDeposit ?? this.deposit;
+            const dep = this._activeDeposit ?? this._boundDeposit();
             this._activeDeposit = null;
-            if (dep && dep.stock > 0) {
+            if (dep && dep.node.activeInHierarchy && dep.stock > 0) {
                 EventBus.emit(GameEvent.NPC_REQUEST_PICKUP, {
                     requesterId: this.npcId,
                     resourceType: dep.resourceType,

@@ -107,8 +107,8 @@
     },
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -9.118,
-      "y": 26.473,
+      "x": -5.731,
+      "y": 70.985,
       "z": 0
     },
     "_lrot": {
@@ -242,7 +242,7 @@
       "__id__": 10
     },
     "_sortingLayer": 0,
-    "_sortingOrder": -1301,
+    "_sortingOrder": -1291,
     "_id": ""
   },
   {
@@ -340,7 +340,7 @@
     "_anchorPoint": {
       "__type__": "cc.Vec2",
       "x": 0.5,
-      "y": 0.5
+      "y": 0
     },
     "_id": ""
   },
@@ -413,8 +413,8 @@
     "_restitution": 0,
     "_offset": {
       "__type__": "cc.Vec2",
-      "x": -1.2,
-      "y": 1.7000000000000028
+      "x": 0.5,
+      "y": 46.400000000000006
     },
     "_points": [
       {
@@ -461,7 +461,7 @@
     "__prefab": {
       "__id__": 23
     },
-    "orderOffset": 0,
+    "orderOffset": 10,
     "autoUpdate": true,
     "renderNode": null,
     "includeChildren": true,
@@ -484,7 +484,7 @@
       "__id__": 25
     },
     "_sortingLayer": 0,
-    "_sortingOrder": -1301,
+    "_sortingOrder": -1291,
     "_id": ""
   },
   {

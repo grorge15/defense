@@ -108,30 +108,9 @@ export class NpcAiSystem extends Component {
         return null;
     }
 
+    /** 帮手只绑摊位自身的 boundDeposit；未绑则不取货 */
     private _resolveDeposit(stall: Stall | null): DepositPoint | null {
-        if (stall?.boundDeposit) {
-            return stall.boundDeposit;
-        }
-        if (stall?.stallId === 'stall_raw' || stall?.stallType === StallType.RawMeat) {
-            if (this.defaultMeatDeposit) {
-                return this.defaultMeatDeposit;
-            }
-        }
-        const deps = this.node.scene?.getComponentsInChildren(DepositPoint, true) ?? [];
-        const stallId = stall?.stallId ?? '';
-        const byStall = deps.find((d) => d.boundStallId === stallId);
-        if (byStall) {
-            return byStall;
-        }
-        if (stall?.stallType === StallType.Wood) {
-            return (
-                deps.find((d) => d.depositId === 'deposit_wood' || d.depositId.startsWith('deposit_wood')) ??
-                null
-            );
-        }
-        return (
-            deps.find((d) => d.depositId === 'deposit_raw' || d.boundStallId === 'stall_raw') ?? null
-        );
+        return stall?.boundDeposit ?? null;
     }
 
     private _onCreateLumberjack(data: { side?: ExpandSide }): void {

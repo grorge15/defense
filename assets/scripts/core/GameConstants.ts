@@ -103,7 +103,9 @@ export class GameConstants {
     public static readonly GATE_OPEN_DISTANCE = 120;
 
     // —— 资源拾取 ——
-    public static readonly PICKUP_RANGE = 60;
+    public static readonly PICKUP_RANGE = 100;
+    /** 玩家靠近树木可砍伐距离 */
+    public static readonly TREE_CHOP_RANGE = 70;
 
     // —— 资源飞行 ——
     public static readonly FLY_ARC_HEIGHT = 80;

@@ -148,6 +148,7 @@ export class PlayerController extends Component {
         this._applyMove();
         this.requestPickup(ResourceType.RawMeat);
         this.requestPickup(ResourceType.Wood);
+        this.requestPickup(ResourceType.Coin);
         this._syncStateEvent();
     }
 
