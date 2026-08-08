@@ -55,14 +55,15 @@ export class GameManager extends Component {
     }
 
     private _onCleared(): void {
-        console.log('[GameManager] 拓展箭塔建成，本局结束');
-        // 引导未绑 tipLabel 时仍尽量弹出通关文案
-        if (this.guide) {
-            return;
+        console.log('[GameManager] 本局结束');
+        const player =
+            this.player ?? this.node.scene?.getComponentInChildren(PlayerController) ?? null;
+        if (player) {
+            this.player = player;
+            player.setInputLocked(true);
         }
-        const guide = this.node.scene?.getComponentInChildren(TutorialGuide) ?? null;
-        if (guide) {
-            this.guide = guide;
+        if (!this.guide) {
+            this.guide = this.node.scene?.getComponentInChildren(TutorialGuide) ?? null;
         }
     }
 }

@@ -19,6 +19,8 @@ export class ShopSystem extends Component {
     private _heroCount: number = 0;
     private _ownedHeroTypes: Set<HeroType> = new Set();
     private _cookedStallBought: boolean = false;
+    /** 拓展塔建成后，等英雄二选一完成再通关 */
+    private _pendingClearAfterHeroTowerId: string | null = null;
     private _expandEast: boolean = false;
     private _expandWest: boolean = false;
     private _boughtFlags: Set<string> = new Set();
@@ -210,6 +212,7 @@ export class ShopSystem extends Component {
                 itemType: ShopItemType.Hero,
                 towerId: data.towerId,
             } as ShopPurchasePayload);
+            this._tryClearGameAfterHero(data.towerId);
             return;
         }
         if (this._coin < data.price) {
@@ -230,6 +233,7 @@ export class ShopSystem extends Component {
                 itemType: ShopItemType.Hero,
                 towerId: data.towerId,
             } as ShopPurchasePayload);
+            this._tryClearGameAfterHero(data.towerId);
         });
     }
 
@@ -395,7 +399,31 @@ export class ShopSystem extends Component {
     private _onTowerBuilt(data: { towerId: string; isExpand?: boolean }): void {
         if (!data.isExpand) {
             this._towerBuilt = true;
+            return;
         }
+        // 拓展塔建成 → 英雄二选一 → 选完再通关
+        this._pendingClearAfterHeroTowerId = data.towerId;
+        this._heroPrepaid.add(data.towerId);
+        this._openHeroSelect(data.towerId, 0);
+        this.scheduleOnce(() => {
+            if (this._pendingClearAfterHeroTowerId !== data.towerId) {
+                return;
+            }
+            const ui = this._findHeroSelectUI();
+            if (!ui || !ui.node.activeInHierarchy) {
+                this._pendingClearAfterHeroTowerId = null;
+                EventBus.emit(GameEvent.GAME_CLEARED);
+            }
+        }, 0);
+    }
+
+    /** 通关流程：拓展塔对应的英雄选完后结束本局 */
+    private _tryClearGameAfterHero(towerId: string): void {
+        if (this._pendingClearAfterHeroTowerId !== towerId) {
+            return;
+        }
+        this._pendingClearAfterHeroTowerId = null;
+        EventBus.emit(GameEvent.GAME_CLEARED);
     }
 
     private _onExpandUnlocked(data: { side: ExpandSide }): void {

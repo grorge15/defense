@@ -36,6 +36,7 @@ export class VirtualJoystick extends Component {
     private _touching: boolean = false;
     private _idleTimer: number = 0;
     private _hasMovedOnce: boolean = false;
+    private _inputLocked: boolean = false;
 
     public get direction(): Readonly<Vec2> {
         return this._dir;
@@ -51,6 +52,21 @@ export class VirtualJoystick extends Component {
 
     public get idleSeconds(): number {
         return this._idleTimer;
+    }
+
+    /** 通关后锁定摇杆输入 */
+    public setInputLocked(locked: boolean): void {
+        this._inputLocked = locked;
+        if (locked) {
+            this._touching = false;
+            this._dir.set(0, 0);
+            if (this.stickRoot) {
+                this.stickRoot.active = false;
+            }
+            if (this.stickNode) {
+                this.stickNode.setPosition(0, 0, 0);
+            }
+        }
     }
 
     protected onLoad(): void {
@@ -98,6 +114,9 @@ export class VirtualJoystick extends Component {
     }
 
     private _onTouchStart(e: EventTouch): void {
+        if (this._inputLocked) {
+            return;
+        }
         this._touching = true;
         this._idleTimer = 0;
         this._hideHint();
@@ -122,7 +141,7 @@ export class VirtualJoystick extends Component {
     }
 
     private _onTouchMove(e: EventTouch): void {
-        if (!this.bgNode) {
+        if (this._inputLocked || !this.bgNode) {
             return;
         }
         const ui = this.bgNode.getComponent(UITransform);

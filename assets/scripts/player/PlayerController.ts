@@ -73,6 +73,8 @@ export class PlayerController extends Component {
     private _facingLeft: boolean = false;
     private _towerSortBoosted: boolean = false;
     private _savedSortOffsets = new Map<SortingOrder2D, number>();
+    /** 通关后锁定移动 */
+    private _inputLocked: boolean = false;
 
     public get state(): PlayerState {
         return this._state;
@@ -80,6 +82,20 @@ export class PlayerController extends Component {
 
     public get worldPos(): Vec3 {
         return this.node.worldPosition.clone();
+    }
+
+    /** 锁定/解锁玩家移动与摇杆 */
+    public setInputLocked(locked: boolean): void {
+        this._inputLocked = locked;
+        this.joystick?.setInputLocked(locked);
+        if (locked && this._rb) {
+            this._rb.linearVelocity = Vec2.ZERO;
+            this._setLoco('idle');
+        }
+    }
+
+    public get inputLocked(): boolean {
+        return this._inputLocked;
     }
 
     /** 供 TowerMountTrigger 判断是否允许本次上塔 */
@@ -136,6 +152,14 @@ export class PlayerController extends Component {
     }
 
     protected update(_dt: number): void {
+        if (this._inputLocked) {
+            if (this._rb) {
+                this._rb.linearVelocity = Vec2.ZERO;
+            }
+            this._setLoco('idle');
+            this._syncStateEvent();
+            return;
+        }
         if (this._jumping) {
             this._syncStateEvent();
             return;

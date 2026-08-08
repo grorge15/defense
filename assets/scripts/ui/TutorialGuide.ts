@@ -2,6 +2,7 @@ import { _decorator, Component, Node, Label } from 'cc';
 import { GuidePhase } from '../core/Enums';
 import { EventBus, GameEvent, CoinChangedPayload } from '../core/GameEvent';
 import { GameConstants } from '../core/GameConstants';
+import { PlayerController } from '../player/PlayerController';
 
 const { ccclass, property } = _decorator;
 
@@ -116,7 +117,7 @@ export class TutorialGuide extends Component {
             this._setPhase(GuidePhase.ExpandArea, '解锁东西两侧拓展地块');
         }
         if (data.itemType === 4) {
-            this._setPhase(GuidePhase.ExpandArea, '建造拓展区箭塔即可通关');
+            this._setPhase(GuidePhase.ExpandArea, '建造拓展区箭塔，选择英雄后通关');
         }
     }
 
@@ -137,6 +138,9 @@ export class TutorialGuide extends Component {
             label.node.active = true;
             label.string = msg;
         }
+        // 兜底锁定玩家（GameManager 也会锁）
+        const player = this.node.scene?.getComponentInChildren(PlayerController) ?? null;
+        player?.setInputLocked(true);
         console.log('[TutorialGuide]', msg);
     }
 }

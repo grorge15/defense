@@ -219,9 +219,7 @@ export class ArrowTower extends Component {
             towerId: this.towerId,
             isExpand: this.isExpandTower,
         });
-        if (this.isExpandTower) {
-            EventBus.emit(GameEvent.GAME_CLEARED);
-        }
+        // 拓展塔通关：由 ShopSystem 先弹英雄二选一，选完后再发 GAME_CLEARED
     }
 
     private _onBuiltEvent(data: { towerId: string; isExpand?: boolean }): void {
