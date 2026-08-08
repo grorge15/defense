@@ -22,10 +22,21 @@ import { Hero } from '../combat/Hero';
 
 const { ccclass, property } = _decorator;
 
+const ALL_HERO_TYPES: HeroType[] = [
+    HeroType.IcePillar,
+    HeroType.Storm,
+    HeroType.Lightning,
+    HeroType.Rocket,
+];
+
+/** 全局已占用英雄类型（同局只能选一次） */
+const _takenHeroTypes = new Set<HeroType>();
+
 /**
  * 英雄二选一：
  * Option = 卡片底；icon = 立绘槽。
  * 立绘按 TypeA/B 从 DefenseCombatSystem.heroPrefabs（或本组件 heroPrefabs）自动取 Sprite。
+ * 已选过的英雄不会再出现在选项中。
  */
 @ccclass('HeroSelectUI')
 export class HeroSelectUI extends Component {
@@ -44,10 +55,10 @@ export class HeroSelectUI extends Component {
     @property({ type: Sprite, tooltip: 'B 卡立绘 Sprite（OptionB/icon）' })
     public heroIconB: Sprite | null = null;
 
-    @property({ type: Enum(HeroType), tooltip: '点 A 卡创建的英雄' })
+    @property({ type: Enum(HeroType), tooltip: '点 A 卡创建的英雄（仍可用时优先）' })
     public typeA: HeroType = HeroType.IcePillar;
 
-    @property({ type: Enum(HeroType), tooltip: '点 B 卡创建的英雄' })
+    @property({ type: Enum(HeroType), tooltip: '点 B 卡创建的英雄（仍可用时优先）' })
     public typeB: HeroType = HeroType.Storm;
 
     @property({
@@ -66,21 +77,41 @@ export class HeroSelectUI extends Component {
     private _price: number = 60;
     private _closing: boolean = false;
     private _inited: boolean = false;
+    private _offerA: HeroType = HeroType.IcePillar;
+    private _offerB: HeroType | null = HeroType.Storm;
+
+    public static isHeroTaken(type: HeroType): boolean {
+        return _takenHeroTypes.has(type);
+    }
+
+    public static markHeroTaken(type: HeroType): void {
+        _takenHeroTypes.add(type);
+    }
 
     protected onLoad(): void {
+        _takenHeroTypes.clear();
         this._ensureInit();
         EventBus.on(GameEvent.OPEN_HERO_SELECT, this._onOpenEvent, this);
+        EventBus.on(GameEvent.HERO_SELECTED, this._onHeroSelectedMark, this);
+        EventBus.on(GameEvent.HERO_CREATED, this._onHeroCreatedMark, this);
     }
 
     protected onDestroy(): void {
         EventBus.off(GameEvent.OPEN_HERO_SELECT, this._onOpenEvent, this);
+        EventBus.off(GameEvent.HERO_SELECTED, this._onHeroSelectedMark, this);
+        EventBus.off(GameEvent.HERO_CREATED, this._onHeroCreatedMark, this);
     }
 
     public show(data: { towerId: string; price: number }): void {
+        this._ensureInit();
+        if (!this._refreshOffers()) {
+            console.warn('[HeroSelectUI] 无可选英雄（均已占用）');
+            this.hide();
+            return;
+        }
         if (!this.node.active) {
             this.node.active = true;
         }
-        this._ensureInit();
         this._refreshIconsFromType();
         this._applyOpen(data);
     }
@@ -91,6 +122,34 @@ export class HeroSelectUI extends Component {
 
     private _onOpenEvent(data: { towerId: string; price: number }): void {
         this.show(data);
+    }
+
+    private _onHeroSelectedMark(data: { heroType: HeroType }): void {
+        HeroSelectUI.markHeroTaken(data.heroType);
+    }
+
+    private _onHeroCreatedMark(data: { heroType?: HeroType }): void {
+        if (data?.heroType !== undefined) {
+            HeroSelectUI.markHeroTaken(data.heroType);
+        }
+    }
+
+    /** 从未占用池中组两张卡；不足 2 张则只显示 A */
+    private _refreshOffers(): boolean {
+        const available = ALL_HERO_TYPES.filter((t) => !_takenHeroTypes.has(t));
+        if (available.length === 0) {
+            this._offerA = this.typeA;
+            this._offerB = null;
+            return false;
+        }
+        const preferred = [this.typeA, this.typeB].filter(
+            (t, i, arr) => available.includes(t) && arr.indexOf(t) === i,
+        );
+        const rest = available.filter((t) => !preferred.includes(t));
+        const ordered = [...preferred, ...rest];
+        this._offerA = ordered[0];
+        this._offerB = ordered.length > 1 ? ordered[1] : null;
+        return true;
     }
 
     private _ensureInit(): void {
@@ -147,10 +206,12 @@ export class HeroSelectUI extends Component {
         return null;
     }
 
-    /** 按 TypeA/B 从英雄预制体抠出 SpriteFrame 填到 Icon */
+    /** 按当前要约 Type 从英雄预制体抠出 SpriteFrame 填到 Icon */
     private _refreshIconsFromType(): void {
-        this._fillIcon(this.heroIconA, this.typeA);
-        this._fillIcon(this.heroIconB, this.typeB);
+        this._fillIcon(this.heroIconA, this._offerA);
+        if (this._offerB !== null) {
+            this._fillIcon(this.heroIconB, this._offerB);
+        }
     }
 
     private _fillIcon(icon: Sprite | null, type: HeroType): void {
@@ -269,11 +330,20 @@ export class HeroSelectUI extends Component {
     private _bindClicks(): void {
         if (this.optionA) {
             this.optionA.off(Button.EventType.CLICK);
-            this.optionA.on(Button.EventType.CLICK, () => this._choose(this.typeA, this.optionA!), this);
+            this.optionA.on(Button.EventType.CLICK, () => this._choose(this._offerA, this.optionA!), this);
         }
         if (this.optionB) {
             this.optionB.off(Button.EventType.CLICK);
-            this.optionB.on(Button.EventType.CLICK, () => this._choose(this.typeB, this.optionB!), this);
+            this.optionB.on(
+                Button.EventType.CLICK,
+                () => {
+                    if (this._offerB === null) {
+                        return;
+                    }
+                    this._choose(this._offerB, this.optionB!);
+                },
+                this,
+            );
         }
     }
 
@@ -282,21 +352,32 @@ export class HeroSelectUI extends Component {
         this._price = data.price;
         this._closing = false;
         this.node.setSiblingIndex(this.node.parent ? this.node.parent.children.length - 1 : 0);
-        for (const n of [this.optionA, this.optionB]) {
-            if (!n) {
-                continue;
-            }
-            n.setScale(1, 1, 1);
-            const op = n.getComponent(UIOpacity);
+        if (this.optionA) {
+            this.optionA.setScale(1, 1, 1);
+            const op = this.optionA.getComponent(UIOpacity);
             if (op) {
                 op.opacity = 255;
             }
-            n.active = true;
+            this.optionA.active = true;
+        }
+        if (this.optionB) {
+            const showB = this._offerB !== null;
+            this.optionB.active = showB;
+            if (showB) {
+                this.optionB.setScale(1, 1, 1);
+                const op = this.optionB.getComponent(UIOpacity);
+                if (op) {
+                    op.opacity = 255;
+                }
+            }
         }
     }
 
     private _choose(type: HeroType, node: Node): void {
         if (this._closing || !this.node.active) {
+            return;
+        }
+        if (HeroSelectUI.isHeroTaken(type)) {
             return;
         }
         this._closing = true;

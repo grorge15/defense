@@ -79,6 +79,12 @@ export class Stall extends Component {
     @property({ tooltip: '上交/交易间隔（秒）' })
     public tradeInterval: number = GameConstants.STALL_DELIVER_INTERVAL;
 
+    @property({ tooltip: '肉/资源飞入 PlaceRoot 的时长（秒）' })
+    public deliverFlyDuration: number = GameConstants.STALL_DELIVER_FLY_DURATION;
+
+    @property({ tooltip: '上交飞行抛物线高度' })
+    public deliverFlyArc: number = GameConstants.STALL_DELIVER_FLY_ARC;
+
     private _stock: number = 0;
     private _playerInZone: boolean = false;
     private _helperInZone: boolean = false;
@@ -137,6 +143,10 @@ export class Stall extends Component {
     }
 
     protected onLoad(): void {
+        // 场景若仍序列化旧间隔，对齐到更快的默认值
+        if (this.tradeInterval > GameConstants.STALL_DELIVER_INTERVAL) {
+            this.tradeInterval = GameConstants.STALL_DELIVER_INTERVAL;
+        }
         this._autoBindRefs();
         const zone = this.interactZone ?? this.node;
         const col = zone.getComponent(Collider2D);
@@ -179,11 +189,11 @@ export class Stall extends Component {
 
         const canTrade =
             this._stock > 0 &&
-            this._shelfIncoming <= 0 &&
             !this._playerStillUnloading() &&
             (this._hasHelper || this._playerInZone) &&
             !!this.customerQueue?.head &&
-            this.customerQueue.head.demandLeft > 0;
+            !this.customerQueue.isTrading &&
+            this.customerQueue.head.openDemand > 0;
         if (canTrade && this.tryTradeOnce()) {
             acted = true;
         }
@@ -239,10 +249,7 @@ export class Stall extends Component {
     public consumeStock(amount: number): number {
         const take = Math.min(amount, this._stock);
         this._stock -= take;
-        for (let i = 0; i < take; i++) {
-            const n = this._placeVisuals.pop();
-            n?.destroy();
-        }
+        this._ensurePlaceVisuals();
         EventBus.emit(GameEvent.STALL_STOCK_CHANGED, {
             stallId: this.stallId,
             stock: this._stock,
@@ -294,8 +301,8 @@ export class Stall extends Component {
             flyResourceTo(
                 n,
                 dest,
-                GameConstants.STALL_DELIVER_FLY_DURATION,
-                GameConstants.STALL_DELIVER_FLY_ARC,
+                this.deliverFlyDuration,
+                this.deliverFlyArc,
                 () => {
                     this._incomingFlights = Math.max(0, this._incomingFlights - 1);
                     this._shelfIncoming = Math.max(0, this._shelfIncoming - 1);
@@ -326,29 +333,45 @@ export class Stall extends Component {
             return false;
         }
         const head = this.customerQueue.head;
-        if (!head || head.demandLeft <= 0) {
+        if (!head || head.openDemand <= 0) {
+            return false;
+        }
+        if (!head.reserveInbound()) {
             return false;
         }
         if (this.consumeStock(1) <= 0) {
+            head.cancelInbound();
             return false;
         }
         const root = this._finishedRoot();
         const from = root.worldPosition;
+        const finishDeliver = (): void => {
+            if (!head.isValid) {
+                return;
+            }
+            const ok = this.customerQueue?.tryDeliverOne((coin) => {
+                if (this.coinDeposit) {
+                    this.coinDeposit.addStock(coin, head.node.worldPosition);
+                } else {
+                    EventBus.emit(GameEvent.COIN_CHANGED, { coin: coin, delta: coin });
+                }
+            });
+            if (!ok) {
+                head.cancelInbound();
+            }
+        };
         if (this.tradeVisualPrefab && head) {
             const v = this._spawnUnder(root, from, this.tradeVisualPrefab);
-            flyResourceTo(v, head.node.worldPosition, undefined, undefined, () => {
+            flyResourceTo(v, head.node, undefined, undefined, () => {
                 if (v.isValid) {
                     v.destroy();
                 }
+                // 肉飞到顾客身上后再扣需求 / 可能离场
+                finishDeliver();
             });
+        } else {
+            finishDeliver();
         }
-        this.customerQueue.tryDeliverOne((coin) => {
-            if (this.coinDeposit) {
-                this.coinDeposit.addStock(coin, head.node.worldPosition);
-            } else {
-                EventBus.emit(GameEvent.COIN_CHANGED, { coin: coin, delta: coin });
-            }
-        });
         return true;
     }
 
@@ -393,8 +416,8 @@ export class Stall extends Component {
             flyResourceTo(
                 n,
                 dest,
-                GameConstants.STALL_DELIVER_FLY_DURATION,
-                GameConstants.STALL_DELIVER_FLY_ARC,
+                this.deliverFlyDuration,
+                this.deliverFlyArc,
                 () => {
                     this._incomingFlights = Math.max(0, this._incomingFlights - 1);
                     if (!n.isValid) {
@@ -534,12 +557,17 @@ export class Stall extends Component {
     }
 
     private _landFinishedVisual(n: Node, root: Node): void {
-        const stackIndex = this._placeVisuals.length;
-        n.parent = root;
-        n.setPosition(0, stackIndex * this.stackGap, 0);
-        this._applySort(n);
-        this._placeVisuals.push(n);
         this._stock += 1;
+        const maxVis = GameConstants.STALL_STACK_VISUAL_MAX;
+        if (this._placeVisuals.length >= maxVis) {
+            n.destroy();
+        } else {
+            const stackIndex = this._placeVisuals.length;
+            n.parent = root;
+            n.setPosition(0, stackIndex * this.stackGap, 0);
+            this._applySort(n);
+            this._placeVisuals.push(n);
+        }
         EventBus.emit(GameEvent.STALL_STOCK_CHANGED, {
             stallId: this.stallId,
             stock: this._stock,
@@ -549,7 +577,8 @@ export class Stall extends Component {
 
     private _stackWorldPos(root: Node, index: number): Vec3 {
         const wp = root.worldPosition;
-        return new Vec3(wp.x, wp.y + index * this.stackGap, 0);
+        const clamped = Math.min(index, GameConstants.STALL_STACK_VISUAL_MAX - 1);
+        return new Vec3(wp.x, wp.y + Math.max(0, clamped) * this.stackGap, 0);
     }
 
     private _ensurePlaceVisuals(): void {
@@ -558,14 +587,15 @@ export class Stall extends Component {
         if (!prefab) {
             return;
         }
-        while (this._placeVisuals.length < this._stock) {
+        const visualTarget = Math.min(this._stock, GameConstants.STALL_STACK_VISUAL_MAX);
+        while (this._placeVisuals.length < visualTarget) {
             const idx = this._placeVisuals.length;
             const n = instantiate(prefab);
             n.parent = root;
             n.setPosition(0, idx * this.stackGap, 0);
             this._placeVisuals.push(n);
         }
-        while (this._placeVisuals.length > this._stock) {
+        while (this._placeVisuals.length > visualTarget) {
             const n = this._placeVisuals.pop();
             n?.destroy();
         }

@@ -44,6 +44,8 @@ export class GameConstants {
     public static readonly CUSTOMER_DEMAND_MIN = 2;
     public static readonly CUSTOMER_DEMAND_MAX = 5;
     public static readonly CUSTOMER_LEAVE_ANIM_SEC = 0.8;
+    /** 需求完成打钩后停留再离场 */
+    public static readonly CUSTOMER_CHECK_HOLD_SEC = 0.55;
     public static readonly CUSTOMER_DEMAND_HARD_CAP = 10;
 
     // —— 战斗 ——
@@ -70,16 +72,19 @@ export class GameConstants {
     public static readonly HERO_SKILL_END_PADDING = 0.4;
 
     // —— 资源堆叠表现 ——
-    public static readonly CARRY_STACK_VISUAL_MAX = 10;
+    /** 背负 / 摊位 PlaceRoot 等视觉堆叠上限 */
+    public static readonly CARRY_STACK_VISUAL_MAX = 70;
     public static readonly CARRY_STACK_GAP = 12;
     public static readonly CARRY_TYPE_GAP = 28;
+    /** 摊位货架视觉堆叠上限 */
+    public static readonly STALL_STACK_VISUAL_MAX = 70;
 
     // —— 放置点占位数量 ——
     public static readonly DEPOSIT_SLOT_RAW_MEAT = 6;
     public static readonly DEPOSIT_SLOT_WOOD = 4;
     public static readonly DEPOSIT_SLOT_COIN = 4;
     /** 每个占位格最多竖直堆叠层数 */
-    public static readonly DEPOSIT_STACK_LAYERS = 20;
+    public static readonly DEPOSIT_STACK_LAYERS = 70;
     /** 金币地块经济库存上限 */
     public static readonly DEPOSIT_COIN_STOCK_CAP = 999;
     /** 放置点竖直堆叠间距（高于背负，堆叠更明显） */
@@ -99,8 +104,9 @@ export class GameConstants {
     // —— 烤肉转化 ——
     public static readonly COOK_DURATION_SEC = 2.0;
 
-    // —— 城门 ——
-    public static readonly GATE_OPEN_DISTANCE = 120;
+    // —— 城门（靠近才开，避免远处就播开门） ——
+    public static readonly GATE_OPEN_DISTANCE = 55;
+    public static readonly GATE_CLOSE_DISTANCE = 80;
 
     // —— 资源拾取 ——
     public static readonly PICKUP_RANGE = 100;
@@ -109,11 +115,14 @@ export class GameConstants {
 
     // —— 资源飞行 ——
     public static readonly FLY_ARC_HEIGHT = 80;
-    public static readonly FLY_DURATION = 0.4;
+    public static readonly FLY_DURATION = 0.5;
+    /** 拾取飞向 CarryRoot：比通用飞行更慢；弧高下限，实际随金币堆高度抬升 */
+    public static readonly PICKUP_FLY_DURATION = 0.5;
+    public static readonly PICKUP_FLY_ARC = 70;
     /** 摊位上交专用：极短飞行，快速卸货 */
-    public static readonly STALL_DELIVER_FLY_DURATION = 0.1;
-    public static readonly STALL_DELIVER_FLY_ARC = 40;
-    public static readonly STALL_DELIVER_INTERVAL = 0.05;
+    public static readonly STALL_DELIVER_FLY_DURATION = 0.045;
+    public static readonly STALL_DELIVER_FLY_ARC = 18;
+    public static readonly STALL_DELIVER_INTERVAL = 0.02;
 
     // —— 怪物刷新 ——
     public static readonly ENEMY_SPAWN_INTERVAL = 0.35;

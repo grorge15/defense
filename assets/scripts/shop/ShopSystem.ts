@@ -17,6 +17,7 @@ export class ShopSystem extends Component {
     private _towerBuilt: boolean = false;
     private _helperBought: boolean = false;
     private _heroCount: number = 0;
+    private _ownedHeroTypes: Set<HeroType> = new Set();
     private _cookedStallBought: boolean = false;
     private _expandEast: boolean = false;
     private _expandWest: boolean = false;
@@ -30,6 +31,7 @@ export class ShopSystem extends Component {
     } | null = null;
 
     protected onLoad(): void {
+        this._ownedHeroTypes.clear();
         EventBus.on(GameEvent.COIN_CHANGED, this._onCoin, this);
         EventBus.on(GameEvent.TOWER_BUILT, this._onTowerBuilt, this);
         EventBus.on(GameEvent.HERO_CREATED, this._onHeroCreated, this);
@@ -190,10 +192,16 @@ export class ShopSystem extends Component {
         if (this._boughtFlags.has(key)) {
             return;
         }
+        // 同一英雄类型全局只能选一次
+        if (this._ownedHeroTypes.has(data.heroType)) {
+            return;
+        }
         const prepaid = this._heroPrepaid.has(data.towerId) || data.price <= 0;
         if (prepaid) {
             this._heroPrepaid.delete(data.towerId);
             this._boughtFlags.add(key);
+            this._ownedHeroTypes.add(data.heroType);
+            HeroSelectUI.markHeroTaken(data.heroType);
             EventBus.emit(GameEvent.CMD_CREATE_HERO, {
                 towerId: data.towerId,
                 heroType: data.heroType,
@@ -212,6 +220,8 @@ export class ShopSystem extends Component {
                 return;
             }
             this._boughtFlags.add(key);
+            this._ownedHeroTypes.add(data.heroType);
+            HeroSelectUI.markHeroTaken(data.heroType);
             EventBus.emit(GameEvent.CMD_CREATE_HERO, {
                 towerId: data.towerId,
                 heroType: data.heroType,
@@ -398,7 +408,11 @@ export class ShopSystem extends Component {
         this._cookedStallBought = true;
     }
 
-    private _onHeroCreated(): void {
+    private _onHeroCreated(data?: { heroType?: HeroType }): void {
         this._heroCount++;
+        if (data?.heroType !== undefined) {
+            this._ownedHeroTypes.add(data.heroType);
+            HeroSelectUI.markHeroTaken(data.heroType);
+        }
     }
 }

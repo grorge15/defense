@@ -62,6 +62,7 @@ export class HelperNpc extends Component {
     protected start(): void {
         this._activateStallHelper();
         this._goIdleAtStall();
+        this._playBodyClip('idle');
     }
 
     /** 由 NpcAi 在赋值 stall/deposit 后调用，确保 setHelperActive */
@@ -74,6 +75,7 @@ export class HelperNpc extends Component {
 
     protected update(dt: number): void {
         if (this._targetPos) {
+            this._faceToward(this._targetPos);
             this._setWalking(true);
             if (this._moveToward(this._targetPos, dt)) {
                 this._targetPos = null;
@@ -99,6 +101,17 @@ export class HelperNpc extends Component {
             this.anim = this.getComponent(Animation) ?? this.getComponentInChildren(Animation);
         }
         playAnimClip(this.anim, kind);
+    }
+
+    /** 朝移动方向翻转（scale.x） */
+    private _faceToward(target: Vec3): void {
+        const dx = target.x - this.node.worldPosition.x;
+        if (Math.abs(dx) < 1) {
+            return;
+        }
+        const s = this.node.scale;
+        const absX = Math.abs(s.x) || 1;
+        this.node.setScale(dx < 0 ? -absX : absX, s.y, s.z);
     }
 
     private _activateStallHelper(): void {
@@ -147,7 +160,7 @@ export class HelperNpc extends Component {
      */
     private _resolvePickupDeposit(): DepositPoint | null {
         const dep = this._boundDeposit();
-        if (!dep) {
+        if (!dep?.node?.isValid) {
             return null;
         }
         if (!dep.node.activeInHierarchy) {
@@ -189,7 +202,7 @@ export class HelperNpc extends Component {
         if (this._task === HelperTask.PickupDeposit) {
             const dep = this._activeDeposit ?? this._boundDeposit();
             this._activeDeposit = null;
-            if (dep && dep.node.activeInHierarchy && dep.stock > 0) {
+            if (dep?.node?.isValid && dep.node.activeInHierarchy && dep.stock > 0) {
                 EventBus.emit(GameEvent.NPC_REQUEST_PICKUP, {
                     requesterId: this.npcId,
                     resourceType: dep.resourceType,

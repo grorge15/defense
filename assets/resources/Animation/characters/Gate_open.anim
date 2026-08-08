@@ -1,14 +1,14 @@
 [
   {
     "__type__": "cc.AnimationClip",
-    "_name": "open",
+    "_name": "Gate_open",
     "_objFlags": 0,
     "__editorExtras__": {
       "embeddedPlayerGroups": []
     },
     "_native": "",
     "sample": 10,
-    "speed": 1,
+    "speed": 1.5,
     "wrapMode": 1,
     "enableTrsBlending": false,
     "_duration": 0.30000000000000004,
@@ -71,7 +71,7 @@
       0,
       0.1,
       0.2,
-      0.30000000000000004
+      0.3
     ],
     "_values": [
       {

@@ -22,7 +22,7 @@
     "_events": [],
     "_embeddedPlayers": [],
     "_additiveSettings": {
-      "__id__": 6
+      "__id__": 7
     },
     "_auxiliaryCurveEntries": []
   },
@@ -36,7 +36,7 @@
       "proxy": null
     },
     "_channel": {
-      "__id__": 4
+      "__id__": 5
     }
   },
   {
@@ -45,8 +45,15 @@
       {
         "__id__": 3
       },
+      {
+        "__id__": 4
+      },
       "spriteFrame"
     ]
+  },
+  {
+    "__type__": "cc.animation.HierarchyPath",
+    "path": "viusal"
   },
   {
     "__type__": "cc.animation.ComponentPath",
@@ -55,7 +62,7 @@
   {
     "__type__": "cc.animation.Channel",
     "_curve": {
-      "__id__": 5
+      "__id__": 6
     }
   },
   {

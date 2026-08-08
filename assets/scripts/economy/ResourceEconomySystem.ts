@@ -10,7 +10,7 @@ import {
     CoinChangedPayload,
     TreeChoppedPayload,
 } from '../core/GameEvent';
-import { flyResourceTo } from '../core/FlyTween';
+import { flyResourceTo, FlyTarget } from '../core/FlyTween';
 import { ResourceEntity } from './ResourceEntity';
 import { DepositPoint } from './DepositPoint';
 import { Stall } from './Stall';
@@ -49,7 +49,15 @@ export class ResourceEconomySystem extends Component {
     @property({ type: [Stall], tooltip: '场景所有摊位' })
     public stalls: Stall[] = [];
 
+    @property({ tooltip: '玩家拾取地面资源 / 靠近 Deposit 的范围' })
+    public pickupRange: number = GameConstants.PICKUP_RANGE;
+
+    @property({ tooltip: '相对拾取范围，靠近 Deposit 额外加成' })
+    public depositPickupBonus: number = 20;
+
     private _coin: number = GameConstants.PLAYER_INIT_COIN;
+    /** 已进钱包、飞向背部尚未落地的金币数（背部视觉先不显示） */
+    private _pendingCarryCoin: number = 0;
     private _groundResources: ResourceEntity[] = [];
     private _carryStack: PlayerCarryStack | null = null;
 
@@ -145,7 +153,7 @@ export class ResourceEconomySystem extends Component {
         return true;
     }
 
-    /** 背部金币堆叠与钱包数量对齐（视觉最多 CARRY_STACK_VISUAL_MAX） */
+    /** 背部金币堆叠与钱包对齐；在途飞币不计入，等落地再显示 */
     private _syncCarryCoins(): void {
         if (!this._getCarryStack()) {
             return;
@@ -154,7 +162,8 @@ export class ResourceEconomySystem extends Component {
         if (!this._getCarryStack().coinPrefab && this.coinPrefab) {
             this._getCarryStack().coinPrefab = this.coinPrefab;
         }
-        this._getCarryStack().setCount(ResourceType.Coin, this._coin);
+        const shown = Math.max(0, this._coin - this._pendingCarryCoin);
+        this._getCarryStack().setCount(ResourceType.Coin, shown);
     }
 
     private _onSpendRequest(data: { amount: number; reason?: string }): void {
@@ -273,8 +282,7 @@ export class ResourceEconomySystem extends Component {
         }
         ent.flying = true;
         const from = ent.node.worldPosition.clone();
-        const dest = dep.node.worldPosition.clone();
-        flyResourceTo(ent.node, dest, undefined, undefined, () => {
+        flyResourceTo(ent.node, dep.node, undefined, undefined, () => {
             const idx = this._groundResources.indexOf(ent);
             if (idx >= 0) {
                 this._groundResources.splice(idx, 1);
@@ -293,7 +301,7 @@ export class ResourceEconomySystem extends Component {
             if (dep.resourceType !== ResourceType.Wood) {
                 continue;
             }
-            if (!dep.node.activeInHierarchy || dep.stock >= dep.capacity) {
+            if (!this._isDepositAlive(dep) || !dep.node.activeInHierarchy || dep.stock >= dep.capacity) {
                 continue;
             }
             const dp = dep.node.worldPosition;
@@ -353,23 +361,28 @@ export class ResourceEconomySystem extends Component {
     private _allDeposits(): DepositPoint[] {
         const sceneDeps = this.node.scene?.getComponentsInChildren(DepositPoint, true) ?? [];
         if (sceneDeps.length === 0) {
-            return this.deposits.filter((d) => d?.isValid);
+            return this.deposits.filter((d) => this._isDepositAlive(d));
         }
         const seen = new Set<DepositPoint>();
         const list: DepositPoint[] = [];
         for (const d of this.deposits) {
-            if (d?.isValid && !seen.has(d)) {
+            if (this._isDepositAlive(d) && !seen.has(d)) {
                 seen.add(d);
                 list.push(d);
             }
         }
         for (const d of sceneDeps) {
-            if (d?.isValid && !seen.has(d)) {
+            if (this._isDepositAlive(d) && !seen.has(d)) {
                 seen.add(d);
                 list.push(d);
             }
         }
         return list;
+    }
+
+    /** 组件或 node 已销毁时不可用（避免读 activeInHierarchy 空引用） */
+    private _isDepositAlive(dep: DepositPoint | null | undefined): dep is DepositPoint {
+        return !!(dep && dep.isValid && dep.node?.isValid);
     }
 
     private _findDepositById(id: string): DepositPoint | null {
@@ -378,18 +391,19 @@ export class ResourceEconomySystem extends Component {
 
     /** 靠近任意匹配类型的 Deposit 则拾取 1 份 */
     private _tryPickupNearbyDeposit(data: PickupRequestPayload): boolean {
-        const range = GameConstants.PICKUP_RANGE + 20;
+        const range = Math.max(10, this.pickupRange + this.depositPickupBonus);
         const r2 = range * range;
         let best: DepositPoint | null = null;
         let bestD = r2;
         for (const dep of this._allDeposits()) {
-            if (!dep.node.activeInHierarchy || dep.stock <= 0) {
+            const n = dep.node;
+            if (!n?.isValid || !n.activeInHierarchy || dep.stock <= 0) {
                 continue;
             }
             if (dep.resourceType !== data.resourceType) {
                 continue;
             }
-            const dp = dep.node.worldPosition;
+            const dp = n.worldPosition;
             const dx = dp.x - data.worldPos.x;
             const dy = dp.y - data.worldPos.y;
             const d = dx * dx + dy * dy;
@@ -406,6 +420,9 @@ export class ResourceEconomySystem extends Component {
     }
 
     private _takeFromDeposit(dep: DepositPoint, data: PickupRequestPayload): boolean {
+        if (!this._isDepositAlive(dep)) {
+            return false;
+        }
         if (dep.resourceType === ResourceType.Coin) {
             return this._pickupCoinFromDeposit(dep, data);
         }
@@ -421,41 +438,56 @@ export class ResourceEconomySystem extends Component {
         return true;
     }
 
-    private _pickupCoinFromDeposit(dep: DepositPoint, data: PickupRequestPayload): boolean {
+    private _pickupCoinFromDeposit(dep: DepositPoint, _data: PickupRequestPayload): boolean {
+        if (!this._isDepositAlive(dep)) {
+            return false;
+        }
         const take = dep.takeStock(1);
         if (take <= 0) {
             return false;
         }
-        // 结算进钱包，并同步背部堆叠
-        this.addCoin(take);
+        // 钱包立刻入账；背部等飞到 CarryRoot 再显示
+        this._coin += take;
+        this._pendingCarryCoin += take;
+        this._emitCoin(take);
+        this._syncCarryCoins();
         const from = new Vec3(dep.node.worldPosition.x, dep.node.worldPosition.y, 0);
-        // 仅飞行动画；勿再 add，否则与 _syncCarryCoins 重复
-        this._flyCoinVisualOnly(from);
+        this._flyCoinVisualOnly(from, take);
         return true;
     }
 
-    /** 金币飞向背部的纯表现（不改数量） */
-    private _flyCoinVisualOnly(from: Vec3): void {
+    /** 金币飞向背部的纯表现；落地后解除 pending 并刷新堆叠 */
+    private _flyCoinVisualOnly(from: Vec3, amount: number = 1): void {
         const prefab = this._prefabFor(ResourceType.Coin);
         const root = this.carryRoot ?? this._getCarryStack()?.carryRoot;
         if (!prefab || !root) {
+            this._pendingCarryCoin = Math.max(0, this._pendingCarryCoin - amount);
+            this._syncCarryCoins();
             return;
         }
         const n = instantiate(prefab);
         n.parent = this.dropRoot ?? this.node;
         n.setWorldPosition(from);
-        flyResourceTo(n, root.worldPosition, undefined, undefined, () => {
-            if (n.isValid) {
-                n.destroy();
-            }
-        });
+        flyResourceTo(
+            n,
+            root,
+            GameConstants.PICKUP_FLY_DURATION,
+            this._pickupFlyArc(),
+            () => {
+                if (n.isValid) {
+                    n.destroy();
+                }
+                this._pendingCarryCoin = Math.max(0, this._pendingCarryCoin - amount);
+                this._syncCarryCoins();
+            },
+        );
     }
 
     private _pickupNearestGround(data: PickupRequestPayload): void {
         // 只清无效实体；飞行中的仍保留，落地后才能继续被吸（勿用 !flying 过滤掉列表项）
         this._groundResources = this._groundResources.filter((r) => r && r.isValid);
         let best: ResourceEntity | null = null;
-        const range = GameConstants.PICKUP_RANGE;
+        const range = Math.max(10, this.pickupRange);
         let bestD = range * range;
         for (const r of this._groundResources) {
             if (r.flying) {
@@ -476,20 +508,25 @@ export class ResourceEconomySystem extends Component {
         }
         best.flying = true;
         const type = best.resourceType;
-        const from = best.node.worldPosition.clone();
         const root = this.carryRoot ?? this._getCarryStack()?.carryRoot;
-        const dest = root ? root.worldPosition : new Vec3(data.worldPos.x, data.worldPos.y, 0);
-        flyResourceTo(best.node, dest, undefined, undefined, () => {
-            if (best && best.isValid) {
-                const idx = this._groundResources.indexOf(best);
-                if (idx >= 0) {
-                    this._groundResources.splice(idx, 1);
+        const dest: FlyTarget = root ?? new Vec3(data.worldPos.x, data.worldPos.y, 0);
+        flyResourceTo(
+            best.node,
+            dest,
+            GameConstants.PICKUP_FLY_DURATION,
+            this._pickupFlyArc(),
+            () => {
+                if (best && best.isValid) {
+                    const idx = this._groundResources.indexOf(best);
+                    if (idx >= 0) {
+                        this._groundResources.splice(idx, 1);
+                    }
+                    best.node.destroy();
                 }
-                best.node.destroy();
-            }
-            this._getCarryStack()?.add(type, 1);
-            EventBus.emit(GameEvent.RESOURCE_PICKED, { type, requesterId: 'player' });
-        });
+                this._getCarryStack()?.add(type, 1);
+                EventBus.emit(GameEvent.RESOURCE_PICKED, { type, requesterId: 'player' });
+            },
+        );
     }
 
     private _flyToPlayer(type: ResourceType, from: Vec3, onDone?: () => void): void {
@@ -503,14 +540,26 @@ export class ResourceEconomySystem extends Component {
         const n = instantiate(prefab);
         n.parent = this.dropRoot ?? this.node;
         n.setWorldPosition(from);
-        flyResourceTo(n, root.worldPosition, undefined, undefined, () => {
-            if (n.isValid) {
-                n.destroy();
-            }
-            this._getCarryStack()?.add(type, 1);
-            EventBus.emit(GameEvent.RESOURCE_PICKED, { type, requesterId: 'player' });
-            onDone?.();
-        });
+        flyResourceTo(
+            n,
+            root,
+            GameConstants.PICKUP_FLY_DURATION,
+            this._pickupFlyArc(),
+            () => {
+                if (n.isValid) {
+                    n.destroy();
+                }
+                this._getCarryStack()?.add(type, 1);
+                EventBus.emit(GameEvent.RESOURCE_PICKED, { type, requesterId: 'player' });
+                onDone?.();
+            },
+        );
+    }
+
+    /** 拾取飞弧：跟随背部最上层金币高度 */
+    private _pickupFlyArc(): number {
+        const stack = this._getCarryStack();
+        return stack?.getPickupFlyArc() ?? GameConstants.PICKUP_FLY_ARC;
     }
 
     private _prefabFor(type: ResourceType): Prefab | null {

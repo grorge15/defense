@@ -290,7 +290,7 @@ patchClipsOnly(
     'd76ecW3HhhKIpnBRhzYluK2',
 );
 
-console.log('=== Helper (self Sprite, no HierarchyPath) ===');
+console.log('=== Helper (path viusal，与 prefab 子节点名一致) ===');
 const helperClips = [
     { name: 'idle', start: 0, end: 7, wrap: 2 },
     { name: 'walk', start: 8, end: 15, wrap: 2 },
@@ -300,7 +300,7 @@ const helperClips = [
         c.name,
         collect('bangshou1_frames', c.start, c.end, 3),
         c.wrap,
-        null,
+        'viusal',
     ),
 );
 patchClipsOnly(

@@ -285,6 +285,13 @@ export class ArrowTower extends Component {
      */
     public convertHeroPurchaseToMeatDeposit(): string {
         this._hasHero = true;
+        // 解锁英雄后不再上塔：隐藏落点（MountTrigger 亦关，避免误触）
+        if (this.groundPoint) {
+            this.groundPoint.active = false;
+        }
+        if (this.mountTrigger) {
+            this.mountTrigger.active = false;
+        }
         const depositId = this.meatDepositId || `${this.towerId}_meat_deposit`;
         if (this._meatDeposit) {
             return this._meatDeposit.depositId || depositId;

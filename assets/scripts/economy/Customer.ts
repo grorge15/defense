@@ -70,6 +70,8 @@ export class Customer extends Component {
     private _demand: number = 0;
     private _maxDemand: number = 0;
     private _done: boolean = false;
+    /** 已起飞尚未落地的交付数（占用需求额度，防止超卖） */
+    private _inbound: number = 0;
     private _variantIndex: number = 0;
     private _walking: boolean = false;
     private _itemBaseScale: Vec3 = new Vec3(1, 1, 1);
@@ -80,8 +82,27 @@ export class Customer extends Component {
         return this._demand;
     }
 
+    /** 尚未交付且未在飞来途中的剩余需求 */
+    public get openDemand(): number {
+        return Math.max(0, this._demand - this._inbound);
+    }
+
     public get isDone(): boolean {
         return this._done;
+    }
+
+    /** 预留 1 份在途交付；成功则返回 true */
+    public reserveInbound(): boolean {
+        if (this._done || this.openDemand <= 0) {
+            return false;
+        }
+        this._inbound += 1;
+        return true;
+    }
+
+    /** 飞行失败/取消时退回预留 */
+    public cancelInbound(): void {
+        this._inbound = Math.max(0, this._inbound - 1);
     }
 
     protected onLoad(): void {
@@ -103,6 +124,7 @@ export class Customer extends Component {
         this._demand = min + Math.floor(Math.random() * (max - min + 1));
         this._maxDemand = this._demand;
         this._done = false;
+        this._inbound = 0;
         if (this.checkIcon) {
             this.checkIcon.active = false;
         }
@@ -255,11 +277,12 @@ export class Customer extends Component {
         }
     }
 
-    /** 交付 1 单位，返回是否完成 */
+    /** 交付 1 单位（应在飞入落地后调用），返回是否完成全部需求 */
     public deliverOne(): boolean {
         if (this._done || this._demand <= 0) {
             return this._done;
         }
+        this._inbound = Math.max(0, this._inbound - 1);
         this._demand -= 1;
         this._pulseIcon();
         if (this._demand <= 0) {
@@ -270,6 +293,33 @@ export class Customer extends Component {
         return false;
     }
 
+    /**
+     * 完成态：确保打钩气泡可见，停留一会后再离场。
+     * （勿在打钩前 setShowDemand(false)，否则勾看不到）
+     */
+    public holdCheckThenLeave(direction: Vec3, onDone: () => void): void {
+        this._ensureDemandUI();
+        if (!this._done) {
+            this._complete();
+        } else {
+            this._showCheckUI();
+        }
+        const hold = Math.max(0.2, GameConstants.CUSTOMER_CHECK_HOLD_SEC);
+        this.unschedule(this._leaveAfterHold);
+        this._leaveDirCache.set(direction);
+        this._leaveDoneCache = onDone;
+        this.scheduleOnce(this._leaveAfterHold, hold);
+    }
+
+    private _leaveDirCache = new Vec3();
+    private _leaveDoneCache: (() => void) | null = null;
+
+    private _leaveAfterHold = (): void => {
+        const done = this._leaveDoneCache;
+        this._leaveDoneCache = null;
+        this.leave(this._leaveDirCache, () => done?.());
+    };
+
     public leave(direction: Vec3, onDone: () => void): void {
         // 离场方向决定朝向（向右离场则朝右）
         this.setFacingLeft(direction.x < 0);
@@ -277,39 +327,38 @@ export class Customer extends Component {
         const start = this.node.worldPosition.clone();
         const end = new Vec3(start.x + direction.x, start.y + direction.y, 0);
         const dur = Math.max(0.35, GameConstants.CUSTOMER_LEAVE_ANIM_SEC);
-        let t = 0;
-        const tick = (dt: number) => {
-            t += dt;
-            const k = Math.min(1, t / dur);
-            this.node.setWorldPosition(
-                start.x + (end.x - start.x) * k,
-                start.y + (end.y - start.y) * k,
-                0,
-            );
-            if (k >= 1) {
-                this.unschedule(tick);
+        Tween.stopAllByTarget(this.node);
+        tween(this.node)
+            .to(dur, { worldPosition: end })
+            .call(() => {
+                this.setWalking(false);
                 onDone();
-            }
-        };
-        this.schedule(tick);
+            })
+            .start();
     }
 
     private _complete(): void {
         this._done = true;
-        if (this.countLabel) {
-            this.countLabel.node.active = false;
-        }
-        if (this.itemIcon) {
-            this.itemIcon.active = false;
+        this._showCheckUI();
+    }
+
+    /** 气泡 + 打钩：隐藏数量/物品，显示 ✓ */
+    private _showCheckUI(): void {
+        this._ensureDemandUI();
+        if (this.bubbleRoot) {
+            this.bubbleRoot.active = true;
         }
         if (this.checkIcon) {
             this.checkIcon.active = true;
         }
+        if (this.itemIcon) {
+            this.itemIcon.active = false;
+        }
+        if (this.countLabel) {
+            this.countLabel.node.active = false;
+        }
         if (this.fillNode) {
             this.fillNode.setScale(1, 1, 1);
-        }
-        if (this.bubbleRoot) {
-            this.bubbleRoot.active = true;
         }
     }
 
@@ -437,7 +486,12 @@ export class Customer extends Component {
 
         // 打钩
         if (!this.checkIcon) {
-            this.checkIcon = bubble.getChildByName('CheckIcon');
+            this.checkIcon =
+                bubble.getChildByName('CheckIcon') ??
+                bubble.getChildByName('check') ??
+                bubble.getChildByName('Check') ??
+                bubble.getChildByName('勾') ??
+                null;
         }
         if (!this.checkIcon) {
             const check = new Node('CheckIcon');

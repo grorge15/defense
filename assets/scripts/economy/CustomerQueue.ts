@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Prefab, instantiate, Vec3, Enum } from 'cc';
+import { _decorator, Component, Node, Prefab, instantiate, Vec3, Enum, tween, Tween } from 'cc';
 import { ResourceType } from '../core/Enums';
 import { GameConstants } from '../core/GameConstants';
 import { Customer } from './Customer';
@@ -33,6 +33,7 @@ export class CustomerQueue extends Component {
 
     private _customers: Customer[] = [];
     private _busy: boolean = false;
+    private _advanceGen: number = 0;
 
     public get head(): Customer | null {
         return this._customers.length > 0 ? this._customers[0] : null;
@@ -77,6 +78,7 @@ export class CustomerQueue extends Component {
         for (let i = 0; i < this.maxCount; i++) {
             this._spawnAtIndex(i);
         }
+        this._busy = false;
         this._refreshHeadUI();
         this._refreshDepthOrder();
     }
@@ -120,14 +122,21 @@ export class CustomerQueue extends Component {
 
     private _refreshHeadUI(): void {
         for (let i = 0; i < this._customers.length; i++) {
-            this._customers[i].setShowDemand(i === 0);
+            const c = this._customers[i];
+            if (!c?.isValid) {
+                continue;
+            }
+            c.setShowDemand(i === 0 && !this._busy);
         }
     }
 
-    /** 向队首交付 1 单位资源，完成则向右离场并前移 */
+    /** 向队首交付 1 单位（飞入落地后调用）；需求清零才离场 */
     public tryDeliverOne(onCoin?: (coin: number) => void): boolean {
         const head = this.head;
         if (!head || this._busy) {
+            return false;
+        }
+        if (head.demandLeft <= 0) {
             return false;
         }
         const finished = head.deliverOne();
@@ -136,48 +145,92 @@ export class CustomerQueue extends Component {
         if (!finished) {
             return true;
         }
+        // 先展示打钩，停留后再离场（勿立刻藏气泡）
         this._busy = true;
-        head.leave(this.leaveDir, () => {
+        head.holdCheckThenLeave(this.leaveDir, () => {
             if (head.isValid) {
+                Tween.stopAllByTarget(head.node);
                 head.node.destroy();
             }
             this._customers.shift();
+            this._pruneInvalid();
             this._advanceAndSpawnTail();
-            this._busy = false;
         });
         return true;
     }
 
+    private _pruneInvalid(): void {
+        this._customers = this._customers.filter((c) => c?.isValid && c.node?.isValid);
+    }
+
     private _advanceAndSpawnTail(): void {
-        for (let i = 0; i < this._customers.length; i++) {
-            const c = this._customers[i];
-            const target = this._posForIndex(i);
-            const start = c.node.position.clone();
-            c.setWalking(true);
-            let t = 0;
-            const dur = 0.35;
-            const tick = (dt: number) => {
-                t += dt;
-                const k = Math.min(1, t / dur);
-                c.node.setPosition(
-                    start.x + (target.x - start.x) * k,
-                    start.y + (target.y - start.y) * k,
-                    0,
-                );
-                if (k >= 1) {
-                    c.setWalking(false);
-                    this.unschedule(tick);
-                    this._refreshDepthOrder();
-                }
-            };
-            this.schedule(tick);
+        this._pruneInvalid();
+        const gen = ++this._advanceGen;
+        const dur = 0.35;
+        const list = this._customers.slice();
+
+        if (list.length === 0) {
+            this._finishAdvance(gen);
+            return;
         }
-        this.scheduleOnce(() => {
-            if (this._customers.length < this.maxCount) {
-                this._spawnAtIndex(this._customers.length);
+
+        let remaining = list.length;
+        const onOneDone = (): void => {
+            remaining -= 1;
+            if (remaining <= 0) {
+                this._finishAdvance(gen);
             }
-            this._refreshHeadUI();
-            this._refreshDepthOrder();
-        }, 0.4);
+        };
+
+        for (let i = 0; i < list.length; i++) {
+            const c = list[i];
+            if (!c?.isValid) {
+                onOneDone();
+                continue;
+            }
+            c.setShowDemand(false);
+            const target = this._posForIndex(i);
+            const start = c.node.position;
+            const dx = target.x - start.x;
+            const dy = target.y - start.y;
+            if (dx * dx + dy * dy < 0.25) {
+                c.node.setPosition(target);
+                c.setWalking(false);
+                onOneDone();
+                continue;
+            }
+            c.setWalking(true);
+            Tween.stopAllByTarget(c.node);
+            tween(c.node)
+                .to(dur, { position: target })
+                .call(() => {
+                    if (c.isValid) {
+                        c.setWalking(false);
+                    }
+                    onOneDone();
+                })
+                .start();
+        }
+
+        // 兜底：防止个别 tween 未回调导致永久 _busy / 走路
+        this.scheduleOnce(() => this._finishAdvance(gen), dur + 0.2);
+    }
+
+    private _finishAdvance(gen: number): void {
+        if (gen !== this._advanceGen || !this._busy) {
+            return;
+        }
+        this._pruneInvalid();
+        if (this._customers.length < this.maxCount) {
+            this._spawnAtIndex(this._customers.length);
+        }
+        for (const c of this._customers) {
+            if (c?.isValid) {
+                c.setWalking(false);
+            }
+        }
+        this._busy = false;
+        this._refreshHeadUI();
+        this._refreshDepthOrder();
     }
 }

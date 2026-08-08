@@ -59,6 +59,7 @@ export class PlayerController extends Component {
     public towerSortOffset: number = 100;
 
     private _rb: RigidBody2D | null = null;
+    private _colliders: Collider2D[] = [];
     private _state: PlayerState = PlayerState.Ground;
     private _towerMount: Node | null = null;
     /** 下塔后短冷却，避免落在 GroundPoint 上立刻再上塔 */
@@ -106,8 +107,9 @@ export class PlayerController extends Component {
             this._rb.linearDamping = 0;
             this._rb.angularDamping = 0;
         }
-        const col = this.getComponent(Collider2D);
-        if (col) {
+        const cols = this.getComponents(Collider2D);
+        this._colliders = cols.slice();
+        for (const col of cols) {
             col.sensor = false;
             col.on(Contact2DType.BEGIN_CONTACT, this._onBeginContact, this);
         }
@@ -125,9 +127,10 @@ export class PlayerController extends Component {
     }
 
     protected onDestroy(): void {
-        const col = this.getComponent(Collider2D);
-        if (col) {
-            col.off(Contact2DType.BEGIN_CONTACT, this._onBeginContact, this);
+        for (const col of this._colliders) {
+            if (col?.isValid) {
+                col.off(Contact2DType.BEGIN_CONTACT, this._onBeginContact, this);
+            }
         }
         Tween.stopAllByTarget(this.node);
     }
@@ -312,6 +315,7 @@ export class PlayerController extends Component {
             this._rb.linearVelocity = Vec2.ZERO;
             this._rb.enabled = false;
         }
+        this._setCollidersEnabled(false);
         this._jumpTo(standPos, () => {
             this._state = PlayerState.OnTower;
             this._setTowerSortBoost(true);
@@ -330,6 +334,7 @@ export class PlayerController extends Component {
                 this._rb.enabled = true;
                 this._rb.linearVelocity = Vec2.ZERO;
             }
+            this._setCollidersEnabled(true);
             this._syncStateEvent();
         });
     }
@@ -387,6 +392,18 @@ export class PlayerController extends Component {
                 onDone();
             })
             .start();
+    }
+
+    /** 上塔关闭碰撞，下塔还原 */
+    private _setCollidersEnabled(on: boolean): void {
+        if (this._colliders.length === 0) {
+            this._colliders = this.getComponents(Collider2D);
+        }
+        for (const col of this._colliders) {
+            if (col?.isValid) {
+                col.enabled = on;
+            }
+        }
     }
 
     /** 上塔 +offset，下塔还原 SortingOrder2D.orderOffset */

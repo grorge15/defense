@@ -236,7 +236,7 @@
       "__id__": 10
     },
     "_sortingLayer": 0,
-    "_sortingOrder": -616,
+    "_sortingOrder": -601,
     "_id": ""
   },
   {
@@ -401,7 +401,7 @@
     "__prefab": {
       "__id__": 21
     },
-    "orderOffset": 15,
+    "orderOffset": 30,
     "autoUpdate": true,
     "renderNode": null,
     "includeChildren": true,
